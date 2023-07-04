@@ -1,3 +1,4 @@
+#include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -179,11 +180,7 @@ void *v_pop(Vec *vec)
 
 	if (vec->len <= half_cap && !(vec->cfg & VNOAUTOSHRINK))
 	{
-		if (v_set_size(vec, half_cap))
-		{
-			vec->len++;
-			return NULL;
-		}
+		v_set_size(vec, half_cap);
 	}
 
 	return old_elem;
@@ -214,16 +211,125 @@ void *v_at(Vec *vec, size_t index)
 
 int v_insert(Vec *vec, size_t index, void *elem)
 {
-	if (index == vec->len) return v_push(vec, elem);
-
-	if (index > vec->len)
+	if (index >= vec->cap)
 	{
-
-		if (vec->cfg & VALLOWOUTOFBOUNDS)
+		if (!(vec->cfg & VALLOWOUTOFBOUNDS))
 		{
-			
+			return v_push(vec, elem);
+		}
+
+		if (vec->cfg & VNOAUTOGROW) return 1;
+
+		if (v_set_size(vec, vec->cap << 1))
+		{
+			return 1;
+		}
+
+		return v_insert(vec, index, elem);
+	}
+
+	if (index >= vec->len)
+	{
+		if (!(vec->cfg & VALLOWOUTOFBOUNDS))
+		{
+			return v_push(vec, elem);
+		}
+
+		vec->last = memcpy(
+		((char*)vec->data) + (index * vec->elem_size),
+		elem,
+		vec->elem_size);
+
+		memset(
+			((char*)vec->last) + vec->elem_size,
+			0,
+			(index - vec->len) * vec->elem_size);
+
+		vec->len = index + 1;
+
+		return 0;
+	}
+
+	if (vec->len + 1 > vec->cap)
+	{
+		if (v_set_size(vec, vec->cap << 1))
+		{
+			return 1;
 		}
 	}
 
+	memmove(
+		((char*)vec->data) + ((index + 1) * vec->elem_size),
+		((char*)vec->data) + (index * vec->elem_size),
+		(vec->len - index) * vec->elem_size);
+
+	memcpy(
+		((char*)vec->data) + (index * vec->elem_size),
+		elem,
+		vec->elem_size);
+
+	vec->len++;
+
 	return 0;
+}
+
+void *v_remove(Vec *vec, size_t index)
+{
+	if (index >= vec->len)
+	{
+		if (vec->cfg & VALLOWOUTOFBOUNDS)
+		{
+			return NULL;
+		}
+
+		return v_pop(vec);
+	}
+
+	void *removed = v_malloc(vec->elem_size);
+
+	memcpy(
+		removed,
+		((char*)vec->data) + (index * vec->elem_size),
+		vec->elem_size);
+
+	memmove(
+		((char*)vec->data) + (index * vec->elem_size),
+		((char*)vec->data) + ((index + 1) * vec->elem_size),
+		(vec->len - index) * vec->elem_size);
+
+	vec->len--;
+
+	size_t half_cap = vec->cap >> 1;
+
+	if (vec->len <= half_cap && !(vec->cfg & VNOAUTOSHRINK))
+	{
+		v_set_size(vec, half_cap);
+	}
+
+	return removed;
+}
+
+void v_zero(Vec *vec)
+{
+	memset(vec->data, 0, (vec->len * vec->elem_size));
+}
+
+void v_clear(Vec *vec)
+{
+	if (!(vec->cfg & VSOFTCLEAR))
+	{
+		v_free(vec->data);
+		vec->data = NULL;
+		vec->cap = 0;
+		vec->first = NULL;
+		vec->last = NULL;
+	}
+
+	vec->len = 0;
+}
+
+void v_destroy(Vec *vec)
+{
+	free(vec->data);
+	free(vec);
 }
