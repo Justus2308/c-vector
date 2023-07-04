@@ -53,13 +53,13 @@ extern int v_grow(Vec *vec, size_t by_size);
 extern int v_shrink(Vec *vec, size_t by_size);
 
 extern VecIter *v_iter(Vec *vec);
-extern VecIter *v_into_iter(Vec *vec);
+extern VecIter *v_into_iter(Vec **restrict vec);
 
 extern size_t vi_pos(VecIter *iter);
 
 extern void *vi_next(VecIter *iter);
-extern int vi_skip(VecIter *iter, size_t amount);
-extern void *vi_goto(VecIter *iter, size_t index);
+extern void vi_skip(VecIter *iter, size_t amount);
+extern void vi_goto(VecIter *iter, size_t index);
 
 extern Vec *vi_from_iter(VecIter *iter);
 extern void vi_destroy(VecIter *iter);

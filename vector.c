@@ -1,3 +1,4 @@
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
@@ -19,6 +20,8 @@ struct vec
 struct vec_iter
 {
 	Vec *vec;
+	bool owner;
+
 	size_t pos;
 	void *finger;
 };
@@ -65,7 +68,11 @@ Vec *v_create_with(size_t elem_size, size_t cap)
 	vec->cfg = v_base_cfg;
 
 	vec->data = v_malloc(elem_size * cap);
-	if (vec->data == NULL && cap != 0) return NULL;
+	if (vec->data == NULL && cap != 0)
+	{
+		free(vec);
+		return NULL;
+	}
 
 	vec->elem_size = elem_size;
 
@@ -332,4 +339,198 @@ void v_destroy(Vec *vec)
 {
 	free(vec->data);
 	free(vec);
+}
+
+
+VecIter *v_iter(Vec *vec)
+{
+	VecIter *iter = v_malloc(sizeof(VecIter));
+	if (iter == NULL) return NULL;
+
+	iter->pos = 0;
+
+	if (vec->len == 0)
+	{
+		iter->vec = NULL;
+		iter->owner = false;
+		iter->finger = NULL;
+
+		return iter;
+	}
+
+	if (vec->cfg & VITERNOCOPY)
+	{
+		iter->vec = vec;
+		iter->owner = false;
+		iter->finger = vec->first;
+
+		return iter;
+	}
+
+	iter->vec = v_malloc(sizeof(Vec));
+	if (iter->vec == NULL)
+	{
+		free(iter);
+		return NULL;
+	}
+
+	iter->vec->data = v_malloc(vec->cap * vec->elem_size);
+	if (iter->vec->data == NULL)
+	{
+		free(iter->vec);
+		free(iter);
+		return NULL;
+	}
+
+	iter->owner = true;
+
+	iter->vec->cfg = vec->cfg;
+	iter->vec->elem_size = vec->elem_size;
+
+	iter->vec->len = vec->len;
+	iter->vec->cap = vec->len;
+
+	iter->vec->first = memcpy(
+		iter->vec->data,
+		vec->data,
+		vec->len * vec->elem_size);
+	iter->vec->last =
+		((char*)iter->vec->first)
+		+ (iter->vec->len * iter->vec->elem_size);
+
+	return iter;
+}
+
+VecIter *v_into_iter(Vec **restrict vec)
+{
+	VecIter *iter = v_malloc(sizeof(VecIter));
+
+	iter->pos = 0;
+
+	if ((*vec)->len == 0)
+	{
+		iter->vec = NULL;
+		iter->owner = false;
+		iter->finger = NULL;
+
+		return iter;
+	}
+
+	iter->vec = *vec;
+	*vec = NULL;
+	iter->owner = true;
+	iter->finger = iter->vec->first;
+
+	return iter;
+}
+
+
+void vi_destroy(VecIter *iter)
+{
+	if (iter->owner)
+	{
+		free(iter->vec->data);
+		free(iter->vec);
+	}
+
+	free(iter);
+}
+
+
+size_t vi_pos(VecIter *iter)
+{
+	return iter->pos;
+}
+
+
+void *vi_next(VecIter *iter)
+{
+	void *next = iter->finger;
+
+	if (next == NULL && (iter->vec->cfg & VITERSELFDESTRUCT))
+	{
+		vi_destroy(iter);
+		return NULL;
+	}
+
+	iter->pos++;
+
+	if (iter->pos >= iter->vec->len)
+	{
+		iter->pos = iter->vec->len;
+		iter->finger = NULL;
+	} else {
+		iter->finger = ((char*)iter->finger) + iter->vec->elem_size;
+	}
+
+	return next;
+}
+
+void vi_skip(VecIter *iter, size_t amount)
+{
+	iter->pos += amount;
+
+	if (iter->pos >= iter->vec->len)
+	{
+		iter->pos = iter->vec->len;
+		iter->finger = NULL;
+	} else {
+		iter->finger = ((char*)iter->finger) + (iter->vec->elem_size * amount);
+	}
+}
+
+void vi_goto(VecIter *iter, size_t index)
+{
+	iter->pos = index;
+
+	if (iter->pos >= iter->vec->len)
+	{
+		iter->pos = iter->vec->len;
+		iter->finger = NULL;
+	} else {
+		iter->finger = ((char*)iter->vec->first) + (iter->vec->elem_size * index);
+	}
+}
+
+
+Vec *vi_from_iter(VecIter *iter)
+{
+	if (iter->owner)
+	{
+		Vec *vec = iter->vec;
+
+		free(iter);
+
+		return vec;
+	}
+
+	Vec *vec = v_malloc(sizeof(Vec));
+	if (vec == NULL)
+	{
+		return NULL;
+	}
+
+	vec->data = v_malloc(iter->vec->cap * iter->vec->elem_size);
+	if (iter->vec->data == NULL)
+	{
+		free(vec);
+		return NULL;
+	}
+
+	vec->cfg = iter->vec->cfg;
+	vec->elem_size = iter->vec->elem_size;
+
+	vec->len = iter->vec->len;
+	vec->cap = iter->vec->len;
+
+	vec->first = memcpy(
+		vec->data,
+		iter->vec->data,
+		vec->len * vec->elem_size);
+	vec->last =
+		((char*)vec->first)
+		+ (vec->len * vec->elem_size);
+
+	vi_destroy(iter);
+	return vec;
 }
