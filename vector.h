@@ -1,5 +1,6 @@
 #pragma once
 
+#include <stdbool.h>
 #include <stddef.h>
 
 
@@ -16,7 +17,8 @@ enum VecCfg
 	VALLOWOUTOFBOUNDS = 8,
 	VITERNOCOPY = 16,
 	VITERSELFDESTRUCT = 32,
-	VTHREADSAFE = 64,
+	VRAWNOCOPY = 64,
+	VTHREADSAFE = 128, /* TODO */
 };
 
 
@@ -35,8 +37,13 @@ extern void v_set_cfg(Vec *vec, enum VecCfg config);
 extern void v_add_cfg(Vec *vec, enum VecCfg config);
 extern void v_remove_cfg(Vec *vec, enum VecCfg config);
 
+extern size_t v_elem_size(Vec *vec);
 extern size_t v_len(Vec *vec);
 extern size_t v_cap(Vec *vec);
+
+extern int v_set_size(Vec *vec, size_t size);
+extern int v_grow(Vec *vec, size_t by_size);
+extern int v_shrink(Vec *vec, size_t by_size);
 
 extern int v_push(Vec *vec, void *elem);
 extern void *v_pop(Vec *vec);
@@ -45,16 +52,35 @@ extern void *v_first(Vec *vec);
 extern void *v_last(Vec *vec);
 
 extern void *v_at(Vec *vec, size_t index);
+// use front ptr for remove(vec, 0) to avoid memmove
 extern int v_insert(Vec *vec, size_t index, void *elem);
 extern void *v_remove(Vec *vec, size_t index);
 
-extern int v_set_size(Vec *vec, size_t size);
-extern int v_grow(Vec *vec, size_t by_size);
-extern int v_shrink(Vec *vec, size_t by_size);
+extern int v_swap_insert(Vec *vec, size_t index, void *elem);
+extern void *v_swap_remove(Vec *vec, size_t index);
+
+extern void *v_raw(Vec *vec);
+extern void *v_raw_slice(Vec *vec, size_t from, size_t to);
+
+extern Vec *v_slice(Vec *vec, size_t from, size_t to);
+
+extern Vec *v_clone(Vec *vec);
+
+extern int v_prepend(Vec *vec, void *src, size_t len);
+extern int v_append(Vec *vec, void *src, size_t len);
+// use front ptr to lazily trim front without reallocating or memmoving
+extern int v_trim_front(Vec *vec, size_t amount);
+extern int v_trim_back(Vec *vec, size_t amount);
+
+extern int v_insert_multiple(Vec *vec, void *src, size_t len);
+extern void *v_remove_multiple(Vec *vec, size_t from, size_t to);
+
+extern Vec *v_split(Vec *vec, size_t at_index);
 
 extern VecIter *v_iter(Vec *vec);
 extern VecIter *v_into_iter(Vec **restrict vec);
 
+extern bool vi_is_owner(VecIter *iter);
 extern size_t vi_pos(VecIter *iter);
 
 extern void *vi_next(VecIter *iter);

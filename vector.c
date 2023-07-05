@@ -107,6 +107,11 @@ void v_remove_cfg(Vec *vec, enum VecCfg config)
 }
 
 
+size_t v_elem_size(Vec *vec)
+{
+	return vec->elem_size;
+}
+
 size_t v_len(Vec *vec)
 {
 	return vec->len;
@@ -316,6 +321,132 @@ void *v_remove(Vec *vec, size_t index)
 	return removed;
 }
 
+
+int v_swap_insert(Vec *vec, size_t index, void *elem)
+{
+	if (index >= vec->len)
+	{
+		if (!(vec->cfg & VALLOWOUTOFBOUNDS))
+		{
+			return v_push(vec, elem);
+		}
+		return v_insert(vec, index, elem);
+	}
+
+	if (v_push(vec, ((char*)vec->data) + (index * vec->elem_size)))
+	{
+		return 1;
+	}
+
+	memcpy(
+		((char*)vec->data) + (index * vec->elem_size),
+		elem,
+		vec->elem_size);
+
+	return 0;
+}
+
+void *v_swap_remove(Vec *vec, size_t index)
+{
+	if (index >= vec->len)
+	{
+		if (!(vec->cfg & VALLOWOUTOFBOUNDS))
+		{
+			return v_pop(vec);
+		}
+		return NULL;
+	}
+
+	void *swap = v_pop(vec);
+	if (swap == NULL) return NULL;
+
+	void *removed = v_malloc(vec->elem_size);
+
+	memcpy(
+		removed,
+		((char*)vec->data) + (index * vec->elem_size),
+		vec->elem_size);
+
+	memcpy(
+		((char*)vec->data) + (index * vec->elem_size),
+		swap,
+		vec->elem_size);
+
+	return removed;
+}
+
+
+void *v_raw(Vec *vec)
+{
+	if (vec->cfg & VRAWNOCOPY)
+	{
+		return vec->data;
+	}
+
+	size_t raw_size = vec->len * vec->elem_size;
+
+	void *raw = v_malloc(raw_size);
+
+	return memcpy(
+		raw,
+		vec->data,
+		raw_size);
+}
+
+void *v_raw_slice(Vec *vec, size_t from, size_t to)
+{
+	if (from >= to) return NULL;
+
+	if (from >= vec->len) return NULL;
+	if (to >= vec->len) to = vec->len - 1;
+
+	if (vec->cfg & VRAWNOCOPY)
+	{
+		return ((char*)vec->data) + (from * vec->elem_size);
+	}
+
+	size_t raw_slice_size = (to - from) * vec->elem_size;
+
+	if (raw_slice_size > vec->len)
+	{
+		return v_raw(vec);
+	}
+
+	void *raw_slice = v_malloc(raw_slice_size);
+
+	return memcpy(
+		raw_slice,
+		((char*)vec->data) + (from * vec->elem_size),
+		raw_slice_size);
+}
+
+
+Vec *v_slice(Vec *vec, size_t from, size_t to)
+{
+	if (from >= to) return NULL;
+
+	if (from >= vec->len) return NULL;
+	if (to >= vec->len) to = vec->len - 1;
+
+	size_t slice_size = (to - from) * vec->elem_size;
+
+	Vec *slice = v_create_with(vec->elem_size, slice_size);
+
+	memcpy(
+		slice->data,
+		((char*)vec->data) + (from * vec->elem_size),
+		slice_size);
+
+	slice->cfg = vec->cfg;
+	slice->elem_size = vec->elem_size;
+	slice->len = slice_size;
+	slice->first = slice->data;
+	slice->last = ((char*)slice->data) + (to * vec->elem_size);
+
+	return slice;
+}
+
+
 void v_zero(Vec *vec)
 {
 	memset(vec->data, 0, (vec->len * vec->elem_size));
@@ -436,6 +567,11 @@ void vi_destroy(VecIter *iter)
 	free(iter);
 }
 
+
+bool vi_is_owner(VecIter *iter)
+{
+	return iter->owner;
+}
 
 size_t vi_pos(VecIter *iter)
 {
