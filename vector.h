@@ -64,8 +64,6 @@ extern void *v_raw_slice(Vec *vec, size_t from, size_t to);
 
 extern Vec *v_slice(Vec *vec, size_t from, size_t to);
 
-extern Vec *v_clone(Vec *vec);
-
 extern int v_prepend(Vec *vec, void *src, size_t len);
 extern int v_append(Vec *vec, void *src, size_t len);
 // use front ptr to lazily trim front without reallocating or memmoving
@@ -76,6 +74,11 @@ extern int v_insert_multiple(Vec *vec, void *src, size_t len);
 extern void *v_remove_multiple(Vec *vec, size_t from, size_t to);
 
 extern Vec *v_split(Vec *vec, size_t at_index);
+
+extern Vec *v_clone(Vec *vec);
+extern void v_zero(Vec *vec);
+extern void v_clear(Vec *vec);
+extern void v_destroy(Vec *vec);
 
 extern VecIter *v_iter(Vec *vec);
 extern VecIter *v_into_iter(Vec **restrict vec);
@@ -89,7 +92,3 @@ extern void vi_goto(VecIter *iter, size_t index);
 
 extern Vec *vi_from_iter(VecIter *iter);
 extern void vi_destroy(VecIter *iter);
-
-extern void v_zero(Vec *vec);
-extern void v_clear(Vec *vec);
-extern void v_destroy(Vec *vec);
