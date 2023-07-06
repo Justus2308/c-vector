@@ -31,7 +31,7 @@ struct vec_iter
 
 static unsigned char v_base_cfg = 0;
 
-static size_t v_base_cap = 8;
+static size_t v_base_cap = VEC_DEFAULT_BASE_CAP;
 
 static void *(*v_malloc)(size_t) = &malloc;
 static void *(*v_calloc)(size_t, size_t) = &calloc;
@@ -451,6 +451,59 @@ Vec *v_slice(Vec *vec, size_t from, size_t to)
 }
 
 
+int v_prepend(Vec *vec, void *src, size_t len)
+{
+	// check if offset is big enough to just move first ptr and copy data to it
+	// if not: check if cap is big enough
+	// yes -> memmove, memcpy
+	// no -> double cap, memmove, memcpy
+
+	if (vec->offset >= len)
+	{
+		vec->offset -= len;
+		vec->first = memcpy(
+			((char*)vec->data) + (vec->offset * vec->elem_size),
+			src,
+			len * vec->elem_size);
+
+		return 0;
+	}
+
+	size_t new_len = vec->len + len;
+	size_t min_cap = new_len - vec->offset;
+
+	if (min_cap > vec->cap && (vec->cfg & VNOAUTOGROW))
+	{
+		return 1;
+	}
+	// WARNING: if offset is changed in v_set_size min_cap needs to be recalculated after every iteration!
+	while (min_cap > vec->cap)
+	{
+		if (v_set_size(vec, vec->cap << 1))
+		{
+			return 1;
+		}
+	}
+
+	memmove(
+		((char*)vec->data) + (len * vec->elem_size),
+		vec->first,
+		vec->len);
+
+	vec->first = memcpy(
+		vec->data,
+		src,
+		len);
+
+	vec->offset = 0;
+	vec->len += len;
+
+	vec->last = ((char*)vec->data) + (vec->len * vec->elem_size);
+
+	return 0;
+}
+
+
 Vec *v_clone(Vec *vec)
 {
 	Vec *clone = v_malloc(sizeof(Vec));
@@ -646,6 +699,6 @@ Vec *vi_from_iter(VecIter *iter)
 	if (vec == NULL) return NULL;
 
 	vi_destroy(iter);
-	
+
 	return vec;
 }
