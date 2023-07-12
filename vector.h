@@ -1,4 +1,6 @@
-#pragma once
+#ifndef C_VECTOR_H_
+#define C_VECTOR_H_
+
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -8,14 +10,17 @@
  * accomodate all elements passed to it.
  * One vector can only operate on a single element size.
  */
-typedef struct vec Vec;
+typedef struct vinternal_Vec Vec;
 
 /**
  * An iterator over a specified vector.
  */
-typedef struct vec_iter VecIter;
+typedef struct vinternal_VecIter VecIter;
 
 
+/**
+ * The default base element capacity of vectors created with v_create
+ */
 #define VEC_DEFAULT_BASE_CAP 8
 
 
@@ -26,7 +31,7 @@ enum VecCfg
 	 * (without simultaneously passing any other flags)
 	 * to reset the target's configuration.
 	 */
-	VRESETCFG = 0,
+	V_RESETCFG = 0,
 
 	/**
 	 * All functions will return an error instead of 
@@ -35,19 +40,19 @@ enum VecCfg
 	 * If this flag is set, the vector's capacity
 	 * has to be managed manually.
 	 */
-	VNOAUTOGROW = 1,
+	V_NOAUTOGROW = 1 << 0,
 
 	/**
 	 * The vector will not be shrunk automatically
 	 * when enough unused capacity gets detected.
 	 */
-	VNOAUTOSHRINK = 2,
+	V_NOAUTOSHRINK = 1 << 1,
 
 	/**
-	 * Calling v_clear() will maintain the vector's
-	 * capacity and not shrink it if this flag is set.
+	 * After an error has occured, all successive operations on the vector
+	 * will also fail until the error gets handled using v_error().
 	 */
-	VSOFTCLEAR = 4,
+	V_CARRYERROR = 1 << 2,
 
 	/**
 	 * All insert/remove functions will accept indices that
@@ -60,26 +65,26 @@ enum VecCfg
 	 * Remove functions and the v_at() function will return
 	 * an error if the passed index is out-of-bounds.
 	 */
-	VALLOWOUTOFBOUNDS = 8,
+	V_ALLOWOUTOFBOUNDS = 1 << 3,
 
 	/**
 	 * All iterators over a vector will not create their own copy of
 	 * it and instead iterate over the original vector.
 	 * Changes in the original vector will influence its iterators.
 	 */
-	VITERNOCOPY = 16,
+	V_ITERNOCOPY = 1 << 4,
 
 	/**
-	 * As soon as an iterator reaches the end of its vector
-	 * it will destroy itself.
+	 * The vector will always have only as much capacity as it currently needs.
+	 * This might save memory, but it comes at the cost of more reallocations.
 	 */
-	VITERSELFDESTRUCT = 32,
+	V_EXACTSIZING = 1 << 5,
 
 	/**
 	 * All raw functions will return a pointer to the actual data of the
 	 * specified vector instead of returning a copy of the data.
 	 */
-	VRAWNOCOPY = 64,
+	V_RAWNOCOPY = 1 << 6,
 
 	/**
 	 * When resizing the vector the current offset into the pure
@@ -87,8 +92,9 @@ enum VecCfg
 	 * This can be useful if a lot trim_front followed by a lot
 	 * of prepend operations are expected.
 	 */
-	VKEEPOFFSET = 128,
+	V_KEEPOFFSET = 1 << 7,
 };
+
 
 /**
  * Set the base configuration of newly created vectors.
@@ -101,16 +107,6 @@ extern void vc_set_base_cfg(enum VecCfg config);
  * The default value is VEC_DEFAULT_BASE_CAP.
  */
 extern void vc_set_base_cap(size_t base_cap);
-
-/**
- * Specify custom allocation functions for this library.
- * The functions have to be POSIX compliant.
- */
-extern void vc_set_allocator(
-	void *(*malloc)(size_t),
-	void *(*calloc)(size_t, size_t),
-	void *(*realloc)(void *, size_t),
-	void (*free)(void *));
 
 
 /**
@@ -159,11 +155,16 @@ extern size_t v_len(Vec *vec);
 extern size_t v_cap(Vec *vec);
 
 /**
- * Reduces the specified vector's capacity to
- * its exact length.
- * If an error occurs, a non-zero value is returned.
+ * Should be used to check for errors on macros
+ * which take a type as a parameter since there is
+ * no way to universally communicate that something
+ * has gone wrong through the return value.
+ * Every function that fails will set the internal
+ * error field of the respective vector.
+ * A nonzero value means that an error has occured.
  */
-extern int v_reduce(Vec *vec);
+extern int v_error(Vec *vec);
+
 
 /**
  * Tries to resize the specified vector.
@@ -172,6 +173,13 @@ extern int v_reduce(Vec *vec);
  * If an error occurs, a non-zero value is returned.
  */
 extern int v_set_size(Vec *vec, size_t size);
+
+/**
+ * Reduces the specified vector's capacity to
+ * its exact length.
+ * If an error occurs, a non-zero value is returned.
+ */
+extern int v_reduce(Vec *vec);
 
 /**
  * Grows the specified vector.
@@ -188,18 +196,24 @@ extern int v_grow(Vec *vec, size_t by_size);
 extern int v_shrink(Vec *vec, size_t by_size);
 
 extern int v_push(Vec *vec, void *elem);
-extern void *v_pop(Vec *vec);
+extern void *v_pop_ptr(Vec *vec);
+#define v_pop(vec, type) *((type *) v_pop_ptr(vec))
 
-extern void *v_first(Vec *vec);
-extern void *v_last(Vec *vec);
+extern void *v_first_ptr(Vec *vec);
+#define v_first(vec, type) *((type *) v_first_ptr(vec))
+extern void *v_last_ptr(Vec *vec);
+#define v_last(vec, type) *((type *) v_last_ptr(vec))
+extern void *v_at_ptr(Vec *vec, size_t index);
+#define v_at(vec, index, type) *((type *) v_at_ptr(vec, index))
 
-extern void *v_at(Vec *vec, size_t index);
 // use front ptr for remove(vec, 0) to avoid memmove
 extern int v_insert(Vec *vec, size_t index, void *elem);
-extern void *v_remove(Vec *vec, size_t index);
+extern void *v_remove_ptr(Vec *vec, size_t index);
+#define v_remove(vec, index, type) *((type *) v_remove_ptr(vec, index))
 
 extern int v_swap_insert(Vec *vec, size_t index, void *elem);
-extern void *v_swap_remove(Vec *vec, size_t index);
+extern void *v_swap_remove_ptr(Vec *vec, size_t index);
+#define v_swap_remove(vec, index, type) *((type *) v_swap_remove_ptr(vec, index))
 
 extern void *v_raw(Vec *vec);
 extern void *v_raw_slice(Vec *vec, size_t from, size_t to);
@@ -219,6 +233,7 @@ extern Vec *v_split(Vec *vec, size_t at_index);
 
 extern Vec *v_clone(Vec *vec);
 extern void v_zero(Vec *vec);
+extern void v_softclear(Vec *vec);
 extern void v_clear(Vec *vec);
 extern void v_destroy(Vec *vec);
 
@@ -228,9 +243,14 @@ extern VecIter *v_into_iter(Vec **restrict vec);
 extern bool vi_is_owner(VecIter *iter);
 extern size_t vi_pos(VecIter *iter);
 
-extern void *vi_next(VecIter *iter);
+extern void *vi_next_ptr(VecIter *iter);
+#define vi_next(iter, type) *((type *) vi_next(iter))
+
 extern void vi_skip(VecIter *iter, size_t amount);
 extern void vi_goto(VecIter *iter, size_t index);
 
 extern Vec *vi_from_iter(VecIter *iter);
 extern void vi_destroy(VecIter *iter);
+
+
+#endif // C_VECTOR_H_

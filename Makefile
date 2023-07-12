@@ -1,5 +1,5 @@
 CC := gcc-13
-CFLAGS := -Wall -Wextra -pedantic -xc -std=c11
+CFLAGS := -Wall -Wextra -pedantic -xc -std=c99
 
 .PHONY: all test test_dir clean
 
