@@ -53,3 +53,9 @@ dkms.conf
 
 # Compile flags for clangd
 compile_flags.txt
+
+# Test binary
+test/
+
+# Compilation reports
+*.c.*

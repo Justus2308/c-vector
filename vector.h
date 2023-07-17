@@ -1,9 +1,9 @@
 #ifndef C_VECTOR_H_
 #define C_VECTOR_H_
 
-
 #include <stdbool.h>
 #include <stddef.h>
+
 
 /**
  * A vector that will grow and shrink automatically to
@@ -19,11 +19,19 @@ typedef struct vinternal_VecIter VecIter;
 
 
 /**
+ * The default base configuration of vectors created with v_create or v_create_with
+ */
+#define VEC_DEFAULT_BASE_CFG 0
+
+/**
  * The default base element capacity of vectors created with v_create
  */
 #define VEC_DEFAULT_BASE_CAP 8
 
 
+/**
+ * Vector configuration flags
+ */
 enum VecCfg
 {
 	/**
@@ -95,6 +103,47 @@ enum VecCfg
 	V_KEEPOFFSET = 1 << 7,
 };
 
+/**
+ * Vector error codes
+ */
+enum
+{
+	/**
+	 * No error has occured.
+	 */
+	VE_OK,
+
+	/**
+	 * Not enough memory available.
+	 */
+	VE_NOMEM,
+
+	/**
+	 * The vector is empty.
+	 */
+	VE_EMPTY,
+
+	/**
+	 * Tried to access out of bounds index.
+	 */
+	VE_OUTOFBOUNDS,
+
+	/**
+	 * The vector is too long.
+	 */
+	VE_TOOLONG,
+
+	/**
+	 * The vector doesn't have enough capacity and is not allowed to grow.
+	 */
+	VE_NOCAP,
+
+	/**
+	 * The provided destination pointer is invalid.
+	 */
+	VE_NODEST,
+};
+
 
 /**
  * Set the base configuration of newly created vectors.
@@ -107,6 +156,12 @@ extern void vc_set_base_cfg(enum VecCfg config);
  * The default value is VEC_DEFAULT_BASE_CAP.
  */
 extern void vc_set_base_cap(size_t base_cap);
+
+
+/**
+ * Align the size of a type to the pointer size of your system.
+ */
+extern inline size_t v_align_to_ptr(size_t size);
 
 
 /**
@@ -195,25 +250,54 @@ extern int v_grow(Vec *vec, size_t by_size);
  */
 extern int v_shrink(Vec *vec, size_t by_size);
 
+/**
+ * Add an element to the end of a vector.
+ * @param vec Vector to be operated on
+ * @param elem Element to be pushed
+ * @return Non-zero if an error has occured
+ */
 extern int v_push(Vec *vec, void *elem);
-extern void *v_pop_ptr(Vec *vec);
-#define v_pop(vec, type) *((type *) v_pop_ptr(vec))
+/**
+ * Remove an element from the end of a vector.
+ * @param vec Vector to be operated on
+ * @param dest Pointer the removed element will be copied to
+ * @return Non-zero if an error has occured
+ * @see VecErr
+ */
+extern int v_pop(Vec *vec, void *dest);
 
-extern void *v_first_ptr(Vec *vec);
-#define v_first(vec, type) *((type *) v_first_ptr(vec))
-extern void *v_last_ptr(Vec *vec);
-#define v_last(vec, type) *((type *) v_last_ptr(vec))
-extern void *v_at_ptr(Vec *vec, size_t index);
-#define v_at(vec, index, type) *((type *) v_at_ptr(vec, index))
+/**
+ * Get a copy of the first element of a vector.
+ * @param vec Vector to be operated on
+ * @param dest Pointer the first element will be copied to
+ * @return Non-zero if an error has occured
+ * @see VecErr
+ */
+extern int v_first(Vec *vec, void *dest);
+/**
+ * Get a copy of the last element of a vector.
+ * @param vec Vector to be operated on
+ * @param dest Pointer the last element will be copied to
+ * @return Non-zero if an error has occured
+ * @see VecErr
+ */
+extern int v_last(Vec *vec, void *dest);
+/**
+ * Get a copy of the element at the specified index of a vector.
+ * @param vec Vector to be operated on
+ * @param dest Pointer the specified element will be copied to
+ * @param index The index of the element
+ * @return Non-zero if an error has occured
+ * @see VecErr
+ */
+extern int v_at(Vec *vec, void *dest, size_t index);
 
 // use front ptr for remove(vec, 0) to avoid memmove
-extern int v_insert(Vec *vec, size_t index, void *elem);
-extern void *v_remove_ptr(Vec *vec, size_t index);
-#define v_remove(vec, index, type) *((type *) v_remove_ptr(vec, index))
+extern int v_insert(Vec *vec, void *elem, size_t index);
+extern int v_remove(Vec *vec, void *dest, size_t index);
 
 extern int v_swap_insert(Vec *vec, size_t index, void *elem);
-extern void *v_swap_remove_ptr(Vec *vec, size_t index);
-#define v_swap_remove(vec, index, type) *((type *) v_swap_remove_ptr(vec, index))
+extern int v_swap_remove(Vec *vec, size_t index, void *dest);
 
 extern void *v_raw(Vec *vec);
 extern void *v_raw_slice(Vec *vec, size_t from, size_t to);
@@ -227,7 +311,7 @@ extern int v_trim_front(Vec *vec, size_t amount);
 extern int v_trim_back(Vec *vec, size_t amount);
 
 extern int v_insert_multiple(Vec *vec, void *src, size_t len);
-extern void *v_remove_multiple(Vec *vec, size_t from, size_t to);
+extern int v_remove_multiple(Vec *vec, size_t from, size_t to, void *dest);
 
 extern Vec *v_split(Vec *vec, size_t at_index);
 
@@ -242,9 +326,9 @@ extern VecIter *v_into_iter(Vec **restrict vec);
 
 extern bool vi_is_owner(VecIter *iter);
 extern size_t vi_pos(VecIter *iter);
+extern bool vi_done(VecIter *iter);
 
-extern void *vi_next_ptr(VecIter *iter);
-#define vi_next(iter, type) *((type *) vi_next(iter))
+extern int vi_next(VecIter *iter, void *dest);
 
 extern void vi_skip(VecIter *iter, size_t amount);
 extern void vi_goto(VecIter *iter, size_t index);
