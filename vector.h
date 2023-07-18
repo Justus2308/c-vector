@@ -106,7 +106,7 @@ enum VecCfg
 /**
  * Vector error codes
  */
-enum
+enum VecErr
 {
 	/**
 	 * No error has occured.
@@ -142,6 +142,12 @@ enum
 	 * The provided destination pointer is invalid.
 	 */
 	VE_NODEST,
+
+	/**
+	 * For internal use only.
+	 * This value will never be returned by a function.
+	 */
+	VINTERNAL_LAST,
 };
 
 
@@ -160,8 +166,26 @@ extern void vc_set_base_cap(size_t base_cap);
 
 /**
  * Align the size of a type to the pointer size of your system.
+ * @param size Size of the type to be aligned
+ * @return Multiple of the system pointer size
  */
-extern inline size_t v_align_to_ptr(size_t size);
+inline size_t v_align_to_ptr(size_t size)
+{
+	/**
+	 * 1. Add sizeof(void *) - 1 to original size to make sure the type will fit into its new size
+	 * 2. Zero all bits after 0b0100/0b1000 to make the result divisible by sizeof(void *)
+	 */
+	return (((size + sizeof(void *) - 1)) & ~((size_t) sizeof(void *) - 1));
+}
+
+
+/**
+ * Print an appropriate error message for a vector error code.
+ * @param str Custom message to be printed before the error message
+ * @param err Vector error code returned by a vector function
+ * @see VecErr
+ */
+extern void v_perror(const char *str, enum VecErr err);
 
 
 /**
@@ -208,17 +232,6 @@ extern size_t v_len(Vec *vec);
  * Returns the current capacity of the specified vector.
  */
 extern size_t v_cap(Vec *vec);
-
-/**
- * Should be used to check for errors on macros
- * which take a type as a parameter since there is
- * no way to universally communicate that something
- * has gone wrong through the return value.
- * Every function that fails will set the internal
- * error field of the respective vector.
- * A nonzero value means that an error has occured.
- */
-extern int v_error(Vec *vec);
 
 
 /**
@@ -296,8 +309,8 @@ extern int v_at(Vec *vec, void *dest, size_t index);
 extern int v_insert(Vec *vec, void *elem, size_t index);
 extern int v_remove(Vec *vec, void *dest, size_t index);
 
-extern int v_swap_insert(Vec *vec, size_t index, void *elem);
-extern int v_swap_remove(Vec *vec, size_t index, void *dest);
+extern int v_swap_insert(Vec *vec, void *elem, size_t index);
+extern int v_swap_remove(Vec *vec, void *dest, size_t index);
 
 extern void *v_raw(Vec *vec);
 extern void *v_raw_slice(Vec *vec, size_t from, size_t to);

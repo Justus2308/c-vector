@@ -1,7 +1,7 @@
 CC := gcc-13
 CFLAGS := -Wall -Wextra -pedantic -xc -std=c99
 
-.PHONY: all test test_dir clean
+.PHONY: all test_dir clean
 
 
 all: vector.a
@@ -18,11 +18,17 @@ vector.o: vector.c vector.h
 test: test_dir test/test.o
 	$(CC) test/test.o -o test/test
 
+user-test: test_dir test/user-test.o vector.o
+	$(CC) test/user-test.o vector.o -o test/user-test
+
 test_dir:
 	mkdir -p test
 
 test/test.o: test.c vector.c vector.h
 	$(CC) $(CFLAGS) -g -c test.c -o test/test.o
+
+test/user-test.o: user-test.c vector.h
+	$(CC) $(CFLAGS) -g -c user-test.c -o test/user-test.o
 
 
 clean:
