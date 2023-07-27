@@ -12,6 +12,10 @@
 
 // Internal structs, variables, macros and functions
 
+/**
+ * Internal vector struct.
+ * Opaque to user.
+ */
 struct vinternal_Vec
 {
 	void *data;
@@ -25,6 +29,10 @@ struct vinternal_Vec
 	uint8_t config;
 };
 
+/**
+ * Internal iterator struct.
+ * Opaque to user.
+ */
 struct vinternal_VecIter
 {
 	Vec *vec;
@@ -33,10 +41,11 @@ struct vinternal_VecIter
 	void *finger;
 
 	bool owner;
-	bool done;
 };
 
-
+/**
+ * Error strings for v_perror.
+ */
 static const char *const VINTERNAL_ERROR_STRINGS[] =
 {
 	[VE_OK]				= "No error has occured.",
@@ -45,7 +54,6 @@ static const char *const VINTERNAL_ERROR_STRINGS[] =
 	[VE_OUTOFBOUNDS]	= "Tried to access index out of bounds of vector.",
 	[VE_TOOLONG]		= "Vector doesn't fit into the requested capacity.",
 	[VE_NOCAP]			= "Vector doesn't have enough capacity left.",
-	[VE_NODEST]			= "Destination pointer is invalid.",
 };
 
 static const size_t VINTERNAL_HALF_SIZE_MAX = SIZE_MAX >> 1;
@@ -61,7 +69,9 @@ static FILE *vinternal_err_stream = NULL;
 
 static bool vinternal_verbose = false;
 
-
+/**
+ * Get information about the config of a vector.
+ */
 #define vinternal_c_noautogrow(vec)			(vec->config & V_NOAUTOGROW)
 #define vinternal_c_noautoshrink(vec)		(vec->config & V_NOAUTOSHRINK)
 #define vinternal_c_allowoutofbounds(vec)	(vec->config & V_ALLOWOUTOFBOUNDS)
@@ -70,15 +80,20 @@ static bool vinternal_verbose = false;
 #define vinternal_c_rawnocopy(vec)			(vec->config & V_RAWNOCOPY)
 #define vinternal_c_keepoffset(vec)			(vec->config & V_KEEPOFFSET)
 
-
+/**
+ * Return from caller if the retval of func is non-zero.
+ */
 #define vinternal_return_maybe(func)										\
 do {																		\
-	int vinternal_macro_tmp_retval__ = func;								\
-	if (vinternal_macro_tmp_retval__)										\
-		return vinternal_macro_tmp_retval__;								\
+	int vmacro_tmp_retval__ = func;											\
+	if (vmacro_tmp_retval__)												\
+		return vmacro_tmp_retval__;											\
 } while(0)
 
 
+/**
+ * Overflow checked double operation on size_t.
+ */
 static inline
 size_t vinternal_double_cap(size_t n)
 {
@@ -94,52 +109,83 @@ size_t vinternal_double_cap(size_t n)
 
 	return n << 1;
 }
-
+/**
+ * Overflow checked addition of two size_t.
+ */
 static inline
 size_t vinternal_size_t_add(size_t x, size_t y)
 {
-	if (x > ((size_t) SIZE_MAX) - y)
-	{
-		return (size_t) SIZE_MAX;
-	}
-
-	return x + y;
+	return x > ((size_t) SIZE_MAX) - y
+		? (size_t) SIZE_MAX
+		: x + y;
 }
-
+/**
+ * Overflow checked subtraction of two size_t.
+ */
 static inline
 size_t vinternal_size_t_sub(size_t x, size_t y)
 {
-	if (y > x)
-	{
-		return 0;
-	}
-
-	return x - y;
+	return x > y
+		? 0
+		: x - y;
 }
-
+/**
+ * Returns real capacity of vector depending on offset and config.
+ */
 static inline
 size_t vinternal_real_cap(Vec *vec)
 {
-	if (vinternal_c_keepoffset(vec))
-		return vec->cap - vec->offset;
-
-	return vec->cap;
+	return vinternal_c_keepoffset(vec)
+		? vec->cap - vec->offset
+		: vec->cap;
 }
-
+/**
+ * Zeroes the offset of a vector only if that is
+ * enough to reach min_cap and config allows it.
+ */
 static inline
-void vinternal_zero_offset_maybe(Vec *vec, size_t min_cap)
+bool vinternal_zero_offset_maybe(Vec *vec, size_t min_cap)
 {
+	if (vec->cap < min_cap)
+		return false;
+
 	if (vec->cap - vec->offset < min_cap)
 	{
+		if (vinternal_c_keepoffset(vec))
+			return false;
+
 		memmove(
 			vec->data,
 			vec->first,
 			vec->len * vec->elem_size);
 
 		vec->offset = 0;
+
+		return true;
 	}
+
+	return false;
+}
+/**
+ * Shrinks the vector if it makes sense
+ * and config allows it.
+ */
+static inline
+int vinternal_shrink_maybe(Vec *vec)
+{
+	size_t half_cap = vinternal_real_cap(vec) >> 1;
+
+	if (vec->len <= half_cap && !vinternal_c_noautoshrink(vec))
+	{
+		vinternal_return_maybe(v_set_size(vec, half_cap));
+	}
+
+	return VE_OK;
 }
 
+/**
+ * General logging function with timestamp.
+ */
 static
 void vinternal_log_to_stream(FILE *stream, char *tag, char *msg)
 {
@@ -149,32 +195,43 @@ void vinternal_log_to_stream(FILE *stream, char *tag, char *msg)
 		current_time->tm_year,
 		current_time->tm_mon,
 		current_time->tm_mday,
+
 		current_time->tm_hour,
 		current_time->tm_min,
 		current_time->tm_sec,
-		tag,
-		msg);
-}
 
+		tag, msg);
+}
+/**
+ * Log to vinternal_out_stream.
+ */
 static inline
 void vinternal_log(char *tag, char *msg)
 {
 	vinternal_log_to_stream(vinternal_out_stream ? vinternal_out_stream : stdout, tag, msg);
 }
-
+/**
+ * Log to vinternal_err_stream.
+ */
 static inline
 void vinternal_err(char *tag, char *msg)
 {
 	vinternal_log_to_stream(vinternal_err_stream ? vinternal_err_stream : stderr, tag, msg);
 }
-
+/**
+ * Log to vinternal_out_stream.
+ * Only logs in verbose mode.
+ */
 static inline
 void vinternal_vlog(char *tag, char *msg)
 {
 	if (vinternal_verbose)
 		vinternal_log(tag, msg);
 }
-
+/**
+ * Log to vinternal_err_stream.
+ * Only logs in verbose mode.
+ */
 static inline
 void vinternal_verr(char *tag, char *msg)
 {
@@ -183,7 +240,7 @@ void vinternal_verr(char *tag, char *msg)
 }
 
 
-// Implementations functions exposed to user
+// Implementations functions exposed to user ; doc in vector.h
 
 void vc_set_base_cfg(enum VecCfg config)
 {
@@ -435,21 +492,20 @@ int v_push(Vec *vec, void *elem)
 	if (elem == NULL)
 		return VE_OK;
 
-	if (vec->len == vec->cap)
+	if (vec->len == vinternal_real_cap(vec)
+		&& !vinternal_zero_offset_maybe(vec, vec->len + 1))
 	{
-		if (vinternal_c_noautogrow(vec)) return VE_NOCAP;
+		if (vinternal_c_noautogrow(vec))
+			return VE_NOCAP;
 
-		vinternal_return_maybe(v_set_size(vec, vinternal_double_cap(vec->cap)));
+		vinternal_return_maybe(
+			v_set_size(vec, vinternal_double_cap(vec->cap)));
 	}
 
 	if (vec->len == 0)
 	{
 		vec->first = ((char*)vec->data) + vec->offset;
 		vec->last = vec->first;
-	}
-	else
-	{
-		vec->last = ((char *)vec->last) + vec->elem_size;
 	}
 
 	vec->len++;
@@ -459,31 +515,29 @@ int v_push(Vec *vec, void *elem)
 		elem,
 		vec->elem_size);
 
+	vec->last = ((char *)vec->last) + vec->elem_size;
+
 	return VE_OK;
 }
 
 int v_pop(Vec *vec, void *dest)
 {
-	if (dest == NULL)
-		return VE_NODEST;
-
 	if (vec->len == 0)
 		return VE_EMPTY;
-
-	memcpy(
-		dest,
-		vec->last,
-		vec->elem_size);
 
 	vec->last = ((char*)vec->last) - vec->elem_size;
 	vec->len--;
 
-	size_t half_cap = vec->cap >> 1;
-
-	if (vec->len <= half_cap && !vinternal_c_noautoshrink(vec))
+	if (dest != NULL)
 	{
-		vinternal_return_maybe(v_set_size(vec, half_cap));
+		memcpy(
+			dest,
+			vec->last,
+			vec->elem_size);
 	}
+
+	vinternal_return_maybe(
+		vinternal_shrink_maybe(vec));
 
 	return VE_OK;
 }
@@ -491,11 +545,11 @@ int v_pop(Vec *vec, void *dest)
 
 int v_first(Vec *vec, void *dest)
 {
-	if (dest == NULL)
-		return VE_NODEST;
-
 	if (vec->len == 0)
 		return VE_EMPTY;
+
+	if (dest == NULL)
+		return VE_OK;
 
 	memcpy(
 		dest,
@@ -507,15 +561,15 @@ int v_first(Vec *vec, void *dest)
 
 int v_last(Vec *vec, void *dest)
 {
-	if (dest == NULL)
-		return VE_NODEST;
-
 	if (vec->len == 0)
 		return VE_EMPTY;
 
+	if (dest == NULL)
+		return VE_OK;
+
 	memcpy(
 		dest,
-		vec->last,
+		((char *)vec->last - vec->elem_size),
 		vec->elem_size);
 
 	return VE_OK;
@@ -524,9 +578,6 @@ int v_last(Vec *vec, void *dest)
 
 int v_at(Vec *vec, void *dest, size_t index)
 {
-	if (dest == NULL)
-		return VE_NODEST;
-
 	if (vec->len == 0)
 		return VE_EMPTY;
 
@@ -537,6 +588,9 @@ int v_at(Vec *vec, void *dest, size_t index)
 
 		return v_last(vec, dest);
 	}
+
+	if (dest == NULL)
+		return VE_OK;
 
 	memcpy(
 		dest,
@@ -551,7 +605,9 @@ int v_insert(Vec *vec, void *elem, size_t index)
 	if (elem == NULL)
 		return VE_OK;
 
-	if (index >= vec->cap)
+	size_t index_plus_one = index + 1;
+
+	if (index >= vinternal_real_cap(vec))
 	{
 		if (!vinternal_c_allowoutofbounds(vec))
 			return v_push(vec, elem);
@@ -559,9 +615,12 @@ int v_insert(Vec *vec, void *elem, size_t index)
 		if (vinternal_c_noautogrow(vec))
 			return VE_OUTOFBOUNDS;
 
-		while (vec->cap < index)
+		vinternal_zero_offset_maybe(vec, index_plus_one);
+
+		while (vinternal_real_cap(vec) < index)
 		{
-			vinternal_return_maybe(v_set_size(vec, vinternal_double_cap(vec->cap)));
+			vinternal_return_maybe(
+				v_set_size(vec, vinternal_double_cap(vec->cap)));
 		}
 	}
 
@@ -575,29 +634,31 @@ int v_insert(Vec *vec, void *elem, size_t index)
 			vec->first = ((char *)vec->data) + vec->offset;
 		}
 
-		vec->last = memcpy(
+		vec->last = ((char *)memcpy(
 			((char*)vec->first) + (index * vec->elem_size),
 			elem,
-			vec->elem_size);
+			vec->elem_size)) + vec->elem_size;
 
 		memset(
-			((char*)vec->last) + vec->elem_size,
+			((char *)vec->last),
 			0,
 			(index - vec->len) * vec->elem_size);
 
-		vec->len = index + 1;
+		vec->len = index_plus_one;
 
 		return VE_OK;
 	}
 
 	size_t new_len = vec->len + 1;
 
-	if (new_len > vec->cap - vec->offset)
+	if (new_len > vinternal_real_cap(vec)
+		&& !vinternal_zero_offset_maybe(vec, new_len))
 	{
 		if (vinternal_c_noautogrow(vec))
 			return VE_NOCAP;
 
-		vinternal_return_maybe(v_set_size(vec, vinternal_double_cap(vec->cap)));
+		vinternal_return_maybe(
+			v_set_size(vec, vinternal_double_cap(vec->cap)));
 	}
 
 	memmove(
@@ -612,14 +673,13 @@ int v_insert(Vec *vec, void *elem, size_t index)
 
 	vec->len = new_len;
 
+	vec->last = ((char *)vec->last) + vec->elem_size;
+
 	return VE_OK;
 }
 
-int v_remove(Vec *vec, void *dest, size_t index)
+int v_remove(Vec *vec, void *dest, size_t index) // WIP
 {
-	if (dest == NULL)
-		return VE_NODEST;
-
 	if (vec->len == 0)
 		return VE_EMPTY;
 
@@ -631,24 +691,25 @@ int v_remove(Vec *vec, void *dest, size_t index)
 		return v_pop(vec, dest);
 	}
 
-	memcpy(
-		dest,
-		((char*)vec->first) + (index * vec->elem_size),
-		vec->elem_size);
+	if (dest != NULL)
+	{
+		memcpy(
+			dest,
+			((char *)vec->first) + (index * vec->elem_size),
+			vec->elem_size);
+	}
 
 	memmove(
-		((char*)vec->first) + (index * vec->elem_size),
-		((char*)vec->first) + ((index + 1) * vec->elem_size),
+		((char *)vec->first) + (index * vec->elem_size),
+		((char *)vec->first) + ((index + 1) * vec->elem_size),
 		(vec->len - index) * vec->elem_size);
 
 	vec->len--;
 
-	size_t half_cap = vec->cap >> 1;
+	vec->last = ((char *)vec->last) - vec->elem_size;
 
-	if (vec->len <= half_cap && !vinternal_c_noautoshrink(vec))
-	{
-		vinternal_return_maybe(v_set_size(vec, half_cap));
-	}
+	vinternal_return_maybe(
+		vinternal_shrink_maybe(vec));
 
 	return VE_OK;
 }
@@ -660,17 +721,13 @@ int v_swap_insert(Vec *vec, void *elem, size_t index)
 		return VE_OK;
 
 	if (index >= vec->len)
-	{
-		if (!vinternal_c_allowoutofbounds(vec))
-			return v_push(vec, elem);
-
 		return v_insert(vec, elem, index);
-	}
 
-	vinternal_return_maybe(v_push(vec, ((char*)vec->first) + (index * vec->elem_size)));
+	vinternal_return_maybe(
+		v_push(vec, ((char *)vec->first) + (index * vec->elem_size)));
 
 	memcpy(
-		((char*)vec->first) + (index * vec->elem_size),
+		((char *)vec->first) + (index * vec->elem_size),
 		elem,
 		vec->elem_size);
 
@@ -679,28 +736,29 @@ int v_swap_insert(Vec *vec, void *elem, size_t index)
 
 int v_swap_remove(Vec *vec, void *dest, size_t index)
 {
-	if (dest == NULL)
-		return VE_NODEST;
-
 	if (vec->len == 0)
 		return VE_EMPTY;
 
 	if (index >= vec->len)
 	{
-		if (!vinternal_c_allowoutofbounds(vec))
-			return v_pop(vec, dest);
+		if (vinternal_c_allowoutofbounds(vec))
+			return VE_OUTOFBOUNDS;
 
-		return VE_OUTOFBOUNDS;
+		return v_pop(vec, dest);
 	}
 
-	void *removed = ((char*)vec->first) + (index * vec->elem_size);
+	void *removed = ((char *)vec->first) + (index * vec->elem_size);
 
-	memcpy(
-		dest,
-		removed,
-		vec->elem_size);
+	if (dest != NULL)
+	{
+		memcpy(
+			dest,
+			removed,
+			vec->elem_size);
+	}
 
-	vinternal_return_maybe(v_pop(vec, removed));
+	vinternal_return_maybe(
+		v_pop(vec, removed));
 
 	return VE_OK;
 }
@@ -771,10 +829,10 @@ Vec *v_slice(Vec *vec, size_t from, size_t to)
 	if (to >= vec->len)
 		to = vec->len - 1;
 
+	size_t slice_len = to - from;
+	size_t slice_size = slice_len * vec->elem_size;
 
-	size_t slice_size = (to - from) * vec->elem_size;
-
-	Vec *slice = v_create_with(vec->elem_size, slice_size);
+	Vec *slice = v_create_with(vec->elem_size, slice_len);
 
 	memcpy(
 		slice->data,
@@ -782,7 +840,7 @@ Vec *v_slice(Vec *vec, size_t from, size_t to)
 		slice_size);
 
 	slice->elem_size = vec->elem_size;
-	slice->len = slice_size;
+	slice->len = slice_len;
 	slice->first = slice->data;
 	slice->last = ((char*)slice->first) + (slice->len * vec->elem_size);
 
@@ -838,7 +896,7 @@ int v_prepend(Vec *vec, void *src, size_t amount)
 /*
 int v_append(Vec *vec, void *src, size_t amount)
 {
-
+	
 }
 */
 
@@ -892,7 +950,8 @@ void v_destroy(Vec *vec)
 VecIter *v_iter(Vec *vec)
 {
 	VecIter *iter = malloc(sizeof(VecIter));
-	if (iter == NULL) return NULL;
+	if (iter == NULL)
+		return NULL;
 
 	iter->pos = 0;
 
@@ -901,12 +960,9 @@ VecIter *v_iter(Vec *vec)
 		iter->vec = NULL;
 		iter->finger = NULL;
 		iter->owner = false;
-		iter->done = true;
 
 		return iter;
 	}
-
-	iter->done = false;
 
 	if (vinternal_c_iternocopy(vec))
 	{
@@ -936,7 +992,6 @@ VecIter *v_into_iter(Vec **restrict vec)
 		iter->vec = NULL;
 		iter->finger = NULL;
 		iter->owner = false;
-		iter->done = true;
 
 		return iter;
 	}
@@ -945,7 +1000,6 @@ VecIter *v_into_iter(Vec **restrict vec)
 	*vec = NULL;
 	iter->finger = iter->vec->first;
 	iter->owner = true;
-	iter->done = false;
 
 	return iter;
 }
@@ -975,7 +1029,10 @@ size_t vi_pos(VecIter *iter)
 
 bool vi_done(VecIter *iter)
 {
-	return iter->done;
+	if (iter->vec == NULL || iter->vec->len == 0)
+		return true;
+
+	return (iter->pos == iter->vec->len - 1);
 }
 
 
@@ -993,9 +1050,9 @@ int vi_next(VecIter *iter, void *dest)
 
 	iter->pos++;
 
-	if (iter->pos == iter->vec->len)
+	if (iter->pos >= iter->vec->len - 1)
 	{
-		iter->pos = iter->vec->len;
+		iter->pos = iter->vec->len - 1;
 		iter->finger = NULL;
 	} else {
 		iter->finger = ((char*)iter->finger) + iter->vec->elem_size;
@@ -1004,36 +1061,41 @@ int vi_next(VecIter *iter, void *dest)
 	return 0;
 }
 
-void vi_skip(VecIter *iter, size_t amount)
+int vi_skip(VecIter *iter, size_t amount)
 {
 	iter->pos += amount;
 
-	if (iter->pos >= iter->vec->len)
+	if (iter->pos >= iter->vec->len - 1)
 	{
-		iter->pos = iter->vec->len;
+		iter->pos = iter->vec->len - 1;
 		iter->finger = NULL;
-	} else {
-		iter->finger = ((char*)iter->finger) + (iter->vec->elem_size * amount);
+	}
+	else
+	{
+		iter->finger = ((char*)iter->finger) + (iter->vec->elem_size * iter->pos);
 	}
 }
 
-void vi_goto(VecIter *iter, size_t index)
+int vi_goto(VecIter *iter, size_t index)
 {
 	iter->pos = index;
 
-	if (iter->pos >= iter->vec->len)
+	if (iter->pos >= iter->vec->len - 1)
 	{
-		iter->pos = iter->vec->len;
+		iter->pos = iter->vec->len - 1;
 		iter->finger = NULL;
-	} else {
-		iter->finger = ((char*)iter->vec->first) + (iter->vec->elem_size * index);
+	}
+	else
+	{
+		iter->finger = ((char*)iter->vec->first) + (iter->vec->elem_size * iter->pos);
 	}
 }
 
 
 Vec *vi_from_iter(VecIter *iter)
 {
-	if (iter->vec == NULL) return NULL;
+	if (iter->vec == NULL)
+		return NULL;
 
 	if (iter->owner)
 	{
@@ -1045,7 +1107,8 @@ Vec *vi_from_iter(VecIter *iter)
 	}
 
 	Vec *vec = v_clone(iter->vec);
-	if (vec == NULL) return NULL;
+	if (vec == NULL)
+		return NULL;
 
 	vi_destroy(iter);
 

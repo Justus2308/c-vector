@@ -1,6 +1,8 @@
 #ifndef C_VECTOR_H_
 #define C_VECTOR_H_
 
+#pragma once
+
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdio.h>
@@ -9,7 +11,7 @@
 /**
  * A vector that will grow and shrink automatically to
  * accomodate all elements passed to it.
- * One vector can only operate on a single element size.
+ * One unique vector can only store elements of the same size.
  */
 typedef struct vinternal_Vec Vec;
 
@@ -40,7 +42,7 @@ enum VecCfg
 	 * (without simultaneously passing any other flags)
 	 * to reset the target's configuration.
 	 */
-	V_RESETCFG = 0,
+	V_RESETCFG			= 0,
 
 	/**
 	 * All functions will return an error instead of 
@@ -49,13 +51,13 @@ enum VecCfg
 	 * If this flag is set, the vector's capacity
 	 * has to be managed manually.
 	 */
-	V_NOAUTOGROW = 1 << 0,
+	V_NOAUTOGROW		= 1 << 0,
 
 	/**
 	 * The vector will not be shrunk automatically
 	 * when enough unused capacity gets detected.
 	 */
-	V_NOAUTOSHRINK = 1 << 1,
+	V_NOAUTOSHRINK		= 1 << 1,
 
 	/**
 	 * All insert/remove functions will accept indices that
@@ -68,26 +70,26 @@ enum VecCfg
 	 * Remove functions and the v_at() function will return
 	 * an error if the passed index is out-of-bounds.
 	 */
-	V_ALLOWOUTOFBOUNDS = 1 << 2,
+	V_ALLOWOUTOFBOUNDS	= 1 << 2,
 
 	/**
 	 * All iterators over a vector will not create their own copy of
 	 * it and instead iterate over the original vector.
 	 * Changes in the original vector will influence its iterators.
 	 */
-	V_ITERNOCOPY = 1 << 3,
+	V_ITERNOCOPY		= 1 << 3,
 
 	/**
 	 * The vector will always have only as much capacity as it currently needs.
 	 * This might save memory, but it comes at the cost of more reallocations.
 	 */
-	V_EXACTSIZING = 1 << 4,
+	V_EXACTSIZING		= 1 << 4,
 
 	/**
 	 * All raw functions will return a pointer to the actual data of the
 	 * specified vector instead of returning a copy of the data.
 	 */
-	V_RAWNOCOPY = 1 << 5,
+	V_RAWNOCOPY			= 1 << 5,
 
 	/**
 	 * When resizing the vector the current offset into the pure
@@ -95,7 +97,7 @@ enum VecCfg
 	 * This can be useful if a lot trim_front followed by a lot
 	 * of prepend operations are expected.
 	 */
-	V_KEEPOFFSET = 1 << 6,
+	V_KEEPOFFSET		= 1 << 6,
 };
 
 /**
@@ -132,11 +134,6 @@ enum VecErr
 	 * The vector doesn't have enough capacity and is not allowed to grow.
 	 */
 	VE_NOCAP,
-
-	/**
-	 * The provided destination pointer is invalid.
-	 */
-	VE_NODEST,
 
 	/**
 	 * For internal use only.
@@ -441,7 +438,7 @@ extern int v_swap_remove(Vec *vec, void *dest, size_t index);
  * @return			Pointer to the vector's data, NULL if the
  *  				vector is empty or an error has occured
  *
- * @see				V_RAWNOCOPY
+ * @see		V_RAWNOCOPY
  */
 extern void *v_raw(Vec *vec);
 /**
@@ -453,7 +450,7 @@ extern void *v_raw(Vec *vec);
  * @return			Pointer to the slice, NULL if the
  *  				slice is empty or an error has occured
  *
- * @see				V_RAWNOCOPY
+ * @see		V_RAWNOCOPY
  */
 extern void *v_raw_slice(Vec *vec, size_t from, size_t to);
 
