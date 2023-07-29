@@ -136,8 +136,13 @@ enum VecErr
 	VE_NOCAP,
 
 	/**
+	 * The vector/iterator pointer is invalid.
+	 */
+	VE_INVAL,
+
+	/**
 	 * For internal use only.
-	 * This value will never be returned by a function.
+	 * This value will never be returned by a function as an error code.
 	 */
 	VINTERNAL_LAST,
 };
@@ -243,10 +248,11 @@ extern Vec *v_create(size_t elem_size);
  * 
  * @param	vec		Vector to be operated on
  * @param	config	Desired configuration
+ * @return			Non-zero value on error
  * 
  * @see		VecCfg
  */
-extern void v_set_cfg(Vec *vec, enum VecCfg config);
+extern int v_set_cfg(Vec *vec, enum VecCfg config);
 
 /**
  * Add flags to the configuration of the specified vector.
@@ -254,10 +260,11 @@ extern void v_set_cfg(Vec *vec, enum VecCfg config);
  * 
  * @param	vec		Vector to be operated on
  * @param	config	Desired configuration to be added
+ * @return			Non-zero value on error
  * 
  * @see		VecCfg
  */
-extern void v_add_cfg(Vec *vec, enum VecCfg config);
+extern int v_add_cfg(Vec *vec, enum VecCfg config);
 
 /**
  * Remove flags from the configuration of the specified vector.
@@ -265,17 +272,18 @@ extern void v_add_cfg(Vec *vec, enum VecCfg config);
  * 
  * @param	vec		Vector to be operated on
  * @param	config	Desired configuration to be removed
+ * @return			Non-zero value on error
  * 
  * @see		VecCfg
  */
-extern void v_remove_cfg(Vec *vec, enum VecCfg config);
+extern int v_remove_cfg(Vec *vec, enum VecCfg config);
 
 
 /**
  * Returns the element size of the specified vector.
  * 
  * @param	vec		Vector to be operated on
- * @return			Element size of the specified vector
+ * @return			Element size of the specified vector, 0 on error
  */
 extern size_t v_elem_size(Vec *vec);
 
@@ -283,7 +291,7 @@ extern size_t v_elem_size(Vec *vec);
  * Returns the current length of the specified vector.
  * 
  * @param	vec		Vector to be operated on
- * @return			Length of the specified vector
+ * @return			Length of the specified vector, 0 on error or if length is 0
  */
 extern size_t v_len(Vec *vec);
 
@@ -291,7 +299,7 @@ extern size_t v_len(Vec *vec);
  * Returns the current capacity of the specified vector.
  * 
  * @param	vec		Vector to be operated on
- * @return			Capacity of the specified vector
+ * @return			Capacity of the specified vector, 0 on error or if capacity is 0
  */
 extern size_t v_cap(Vec *vec);
 
@@ -312,9 +320,24 @@ extern int v_set_size(Vec *vec, size_t size);
 /**
  * Reduces the specified vector's capacity to
  * its exact length.
- * If an error occurs, a non-zero value is returned.
+ *
+ * @param	vec		Vector to be operated on
+ * @return			Non-zero value on error
+ *
+ * @see		VecErr
  */
 extern int v_reduce(Vec *vec);
+/**
+ * Reduces the specified vector's capacity to its
+ * exact length. The vector's offset will always
+ * be zeroed, regardless of its configuration.
+ *
+ * @param	vec		Vector to be operated on
+ * @return			Non-zero value on error
+ *
+ * @see		VecErr
+ */
+extern int v_reduce_strict(Vec *vec);
 
 /**
  * Grows the specified vector.
@@ -495,6 +518,8 @@ extern int v_append(Vec *vec, void *src, size_t amount);
  * @param	dest	Pointer to a buffer the trimmed elements will be copied to
  * @param	amount	Amount of elements to be trimmed
  * @return			Non-zero if an error has occured
+ *
+ * @see		VecErr
  */
 extern int v_trim_front(Vec *vec, void *dest, size_t amount);
 /**
@@ -504,6 +529,8 @@ extern int v_trim_front(Vec *vec, void *dest, size_t amount);
  * @param	dest	Pointer to a buffer the trimmed elements will be copied to
  * @param	amount	Amount of elements to be trimmed
  * @return			Non-zero if an error has occured
+ *
+ * @see		VecErr
  */
 extern int v_trim_back(Vec *vec, void *dest, size_t amount);
 
@@ -554,26 +581,38 @@ extern Vec *v_clone(Vec *vec);
  * Zero all elements of a vector.
  *
  * @param	vec		Vector to be operated on
+ * @return			Non-zero if an error has occured
+ *
+ * @see		VecErr
  */
-extern void v_zero(Vec *vec);
+extern int v_zero(Vec *vec);
 /**
  * Clear a vector's elements while retaining its capacity.
  *
  * @param	vec		Vector to be operated on
+ * @return			Non-zero if an error has occured
+ *
+ * @see		VecErr
  */
-extern void v_softclear(Vec *vec);
+extern int v_softclear(Vec *vec);
 /**
  * Clear a vector's elements and set its capacity to zero.
  *
  * @param	vec		Vector to be operated on
+ * @return			Non-zero if an error has occured
+ *
+ * @see		VecErr
  */
-extern void v_clear(Vec *vec);
+extern int v_clear(Vec *vec);
 /**
  * Destroy a vector.
  *
  * @param	vec		Vector to be destroyed
+ * @return			Non-zero if an error has occured
+ *
+ * @see		VecErr
  */
-extern void v_destroy(Vec *vec);
+extern int v_destroy(Vec *vec);
 
 /**
  * Create an iterator over a vector.
@@ -598,21 +637,21 @@ extern VecIter *v_into_iter(Vec **restrict vec);
  * Check whether an iterator owns the vector it iterates over.
  *
  * @param	iter	Iterator to be operated on
- * @return			Ownership status of the specified iterator's vector
+ * @return			True if the specified iterator owns its vector, false if not or on error
  */
 extern bool vi_is_owner(VecIter *iter);
 /**
  * Returns the current position of the specified iterator.
  * 
  * @param	iter	Iterator to be operated on
- * @return			Current position of the iterator
+ * @return			Current position of the iterator, 0 on error or if its position is 0
  */
 extern size_t vi_pos(VecIter *iter);
 /**
  * Check whether an iterator is done iterating over its vector.
  *
  * @param	iter	Iterator to be operated on
- * @return			True if the iterator is done iterating
+ * @return			True if the iterator is done iterating or on error, false if not
  */
 extern bool vi_done(VecIter *iter);
 
@@ -622,6 +661,8 @@ extern bool vi_done(VecIter *iter);
  * @param	iter	Iterator to be operated on
  * @param	dest	Pointer the current element will be copied to
  * @return			Non-zero if an error has occured
+ *
+ * @see		VecErr
  */
 extern int vi_current(VecIter *iter, void *dest);
 /**
@@ -630,6 +671,8 @@ extern int vi_current(VecIter *iter, void *dest);
  * @param	iter	Iterator to be operated on
  * @param	dest	Pointer the current element will be copied to
  * @return			Non-zero if an error has occured
+ *
+ * @see		VecErr
  */
 extern int vi_next(VecIter *iter, void *dest);
 
@@ -639,6 +682,8 @@ extern int vi_next(VecIter *iter, void *dest);
  * @param	iter	Iterator to be operated on
  * @param	amount	Amount of elements to be skipped
  * @return			Non-zero if an error has occured
+ *
+ * @see		VecErr
  */
 extern int vi_skip(VecIter *iter, size_t amount);
 /**
@@ -647,6 +692,8 @@ extern int vi_skip(VecIter *iter, size_t amount);
  * @param	iter	Iterator to be operated on
  * @param	index	Index to be jumped to
  * @return			Non-zero if an error has occured
+ *
+ * @see		VecErr
  */
 extern int vi_goto(VecIter *iter, size_t index);
 /**
@@ -654,6 +701,8 @@ extern int vi_goto(VecIter *iter, size_t index);
  *
  * @param	iter	Iterator to be operated on
  * @return			Non-zero if an error has occured
+ *
+ * @see		VecErr
  */
 extern int vi_reset(VecIter *iter);
 
@@ -668,8 +717,11 @@ extern Vec *vi_from_iter(VecIter *iter);
  * Destroy an iterator.
  *
  * @param	iter	Iterator to be destroyed
+ * @return			Non-zero if an error has occured
+ *
+ * @see		VecErr
  */
-extern void vi_destroy(VecIter *iter);
+extern int vi_destroy(VecIter *iter);
 
 
 #endif // C_VECTOR_H_

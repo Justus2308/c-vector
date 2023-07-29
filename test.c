@@ -38,6 +38,8 @@ static void vdebug_print_raw_mem(Vec *vec)
 
 int main(void)
 {
+	size_t i;
+
 	v_perror("test error", VE_NOCAP);
 
 	Vec *vec = v_create(sizeof(int));
@@ -128,7 +130,7 @@ int main(void)
 
 	void *raw = v_raw(vec);
 	printf("Raw data from v_raw:\n");
-	for (size_t i = 0; i < vec->len * vec->elem_size; i++)
+	for (i = 0; i < vec->len * vec->elem_size; i++)
 	{
 		printf("%02X ", ((char *)raw)[i]);
 
@@ -141,7 +143,7 @@ int main(void)
 
 	void *raw_slice = v_raw_slice(vec, 1, 4);
 	printf("Raw data from v_raw_slice[1...4]:\n");
-	for (size_t i = 0; i < 3 * vec->elem_size; i++)
+	for (i = 0; i < 3 * vec->elem_size; i++)
 	{
 		printf("%02X ", ((char *)raw_slice)[i]);
 
@@ -159,6 +161,33 @@ int main(void)
 
 	vdebug_print_info(vec);
 	vdebug_print_raw_mem(vec);
+
+	int prepended[] = {0x123, 0x456};
+	v_prepend(vec, &prepended, 2);
+	printf("Prepended :");
+	for (i = 0; i < 2; i++)
+	{
+		printf(" 0x%x", prepended[i]);
+	}
+	printf("\n");
+
+	vdebug_print_info(vec);
+	vdebug_print_raw_mem(vec);
+
+	int appended[] = {0x1, 0x2, 0x3, 0x4};
+	v_append(vec, &appended, 4);
+	printf("Appended :");
+	for (i = 0; i < 4; i++)
+	{
+		printf(" 0x%x", appended[i]);
+	}
+	printf("\n");
+
+	vdebug_print_info(vec);
+	vdebug_print_raw_mem(vec);
+
+	v_last(vec, &last);
+	printf("Last is : 0x%x\n", last);
 
 
 

@@ -54,6 +54,7 @@ static const char *const VINTERNAL_ERROR_STRINGS[] =
 	[VE_OUTOFBOUNDS]	= "Tried to access index out of bounds of vector.",
 	[VE_TOOLONG]		= "Vector doesn't fit into the requested capacity.",
 	[VE_NOCAP]			= "Vector doesn't have enough capacity left.",
+	[VE_INVAL]			= "Vector pointer points to invalid address.",
 };
 
 static const size_t VINTERNAL_HALF_SIZE_MAX = SIZE_MAX >> 1;
@@ -140,20 +141,69 @@ size_t vinternal_real_cap(Vec *vec)
 		: vec->cap;
 }
 /**
+ * Resize a vector to size if possible and respecting its config.
+ */
+static
+int vinternal_set_size(Vec *vec, size_t size, bool keep_offset) // TODO: offset handling
+{
+	if (size == 0)
+	{
+		v_clear(vec);
+		return VE_OK;
+	}
+
+	if (vec->offset == 0 || keep_offset)
+	{
+		void *new_data = realloc(vec->data, (size + vec->offset) * vec->elem_size);
+
+		if (new_data == NULL)
+			return VE_NOMEM;
+
+		vec->data = new_data;
+	}
+	else if (vec->cap >= size) // ???
+	{
+		memmove(vec->data, vec->first, vec->len);
+		vec->offset = 0;
+	}
+	else
+	{
+		void *new_data = malloc(size * vec->elem_size);
+
+		if (new_data == NULL)
+			return VE_NOMEM;
+
+		memcpy(
+			new_data,
+			((char *)vec->data) + (vec->offset * vec->elem_size),
+			vec->len * vec->elem_size);
+
+		free(vec->data);
+
+		vec->data = new_data;
+		vec->offset = 0;
+	}
+
+	vec->first = ((char *)vec->data) + (vec->offset * vec->elem_size);
+	vec->last = ((char *)vec->first) + (vec->len * vec->elem_size);
+
+	vec->cap = size;
+
+	return VE_OK;
+}
+/**
  * Zeroes the offset of a vector only if that is
  * enough to reach min_cap and config allows it.
+ * Returns true if offset has been zeroed.
  */
 static inline
 bool vinternal_zero_offset_maybe(Vec *vec, size_t min_cap)
 {
-	if (vec->cap < min_cap)
+	if (vec->cap < min_cap || vec->offset == 0)
 		return false;
 
-	if (vec->cap - vec->offset < min_cap)
+	if (vec->cap - vec->offset < min_cap && !vinternal_c_keepoffset(vec))
 	{
-		if (vinternal_c_keepoffset(vec))
-			return false;
-
 		memmove(
 			vec->data,
 			vec->first,
@@ -171,14 +221,19 @@ bool vinternal_zero_offset_maybe(Vec *vec, size_t min_cap)
  * and config allows it.
  */
 static inline
-int vinternal_shrink_maybe(Vec *vec)
+int vinternal_shrink_maybe(Vec *vec) // TODO: account for offset in loop?
 {
-	size_t half_cap = vinternal_real_cap(vec) >> 1;
+	if (vinternal_c_noautoshrink(vec))
+		return VE_OK;
 
-	if (vec->len <= half_cap && !vinternal_c_noautoshrink(vec))
-	{
-		vinternal_return_maybe(v_set_size(vec, half_cap));
-	}
+	size_t half_cap, new_cap;
+	half_cap = new_cap = vinternal_real_cap(vec);
+
+	while (vec->len <= (half_cap >>= 1))
+		new_cap = half_cap;
+
+	vinternal_return_maybe(
+		v_set_size(vec, new_cap));
 
 	return VE_OK;
 }
@@ -208,7 +263,11 @@ void vinternal_log_to_stream(FILE *stream, char *tag, char *msg)
 static inline
 void vinternal_log(char *tag, char *msg)
 {
-	vinternal_log_to_stream(vinternal_out_stream ? vinternal_out_stream : stdout, tag, msg);
+	vinternal_log_to_stream(
+		vinternal_out_stream
+		? vinternal_out_stream
+		: stdout,
+		tag, msg);
 }
 /**
  * Log to vinternal_err_stream.
@@ -216,7 +275,11 @@ void vinternal_log(char *tag, char *msg)
 static inline
 void vinternal_err(char *tag, char *msg)
 {
-	vinternal_log_to_stream(vinternal_err_stream ? vinternal_err_stream : stderr, tag, msg);
+	vinternal_log_to_stream(
+		vinternal_err_stream
+		? vinternal_err_stream
+		: stderr,
+		tag, msg);
 }
 /**
  * Log to vinternal_out_stream.
@@ -326,162 +389,123 @@ Vec *v_create(size_t elem_size)
 }
 
 
-void v_set_cfg(Vec *vec, enum VecCfg config)
+int v_set_cfg(Vec *vec, enum VecCfg config)
 {
+	if (vec == NULL)
+		return VE_INVAL;
+
 	vec->config = config;
+
+	return VE_OK;
 }
 
-void v_add_cfg(Vec *vec, enum VecCfg config)
+int v_add_cfg(Vec *vec, enum VecCfg config)
 {
+	if (vec == NULL)
+		return VE_INVAL;
+
 	vec->config |= config;
+
+	return VE_OK;
 }
 
-void v_remove_cfg(Vec *vec, enum VecCfg config)
+int v_remove_cfg(Vec *vec, enum VecCfg config)
 {
+	if (vec == NULL)
+		return VE_INVAL;
+
 	vec->config &= ~config;
+
+	return VE_OK;
 }
 
 
 size_t v_elem_size(Vec *vec)
 {
+	if (vec == NULL)
+		return 0;
+
 	return vec->elem_size;
 }
 
 size_t v_len(Vec *vec)
 {
+	if (vec == NULL)
+		return 0;
+
 	return vec->len;
 }
 
 size_t v_cap(Vec *vec)
 {
+	if (vec == NULL)
+		return 0;
+
 	return vec->cap;
 }
 
 
-void v_clear(Vec *vec)
+int v_clear(Vec *vec)
 {
+	if (vec == NULL)
+		return VE_INVAL;
+
 	free(vec->data);
 
 	vec->data = vec->first = vec->last = NULL;
 	vec->len = vec->cap = vec->offset = 0;
+
+	return VE_OK;
 }
 
 
 int v_set_size(Vec *vec, size_t size)
 {
+	if (vec == NULL)
+		return VE_INVAL;
+
 	if (size < vec->len)
 		return VE_TOOLONG;
 
-	if (size == 0)
-	{
-		v_clear(vec);
+	if (size == vec->cap - vec->offset)
 		return VE_OK;
-	}
 
-	if (vec->offset == 0 || vinternal_c_keepoffset(vec))
-	{
-		void *new_data = realloc(vec->data, (size + vec->offset) * vec->elem_size);
-
-		if (new_data == NULL)
-			return VE_NOMEM;
-
-		vec->data = new_data;
-	}
-	else if (vec->offset >= size) // ???
-	{
-		memmove(vec->data, vec->first, vec->len);
-		vec->offset = 0;
-	}
-	else
-	{
-		void *new_data = malloc(size * vec->elem_size);
-
-		if (new_data == NULL)
-			return VE_NOMEM;
-
-		memcpy(
-			new_data,
-			((char *)vec->data) + (vec->offset * vec->elem_size),
-			vec->len * vec->elem_size);
-
-		free(vec->data);
-
-		vec->data = new_data;
-		vec->offset = 0;
-	}
-
-	if (vec->len != 0)
-	{
-		vec->first = ((char*)vec->data) + (vec->offset * vec->elem_size);
-		vec->last = ((char*)vec->first) + (vec->len * vec->elem_size);
-	}
-
-	vec->cap = size;
-
-	return VE_OK;
+	return vinternal_set_size(vec, size, vinternal_c_keepoffset(vec));
 }
 
 int v_reduce(Vec *vec)
 {
-	return v_set_size(vec, vec->len);
+	if (vec == NULL)
+		return VE_INVAL;
+
+	if (vec->len == vec->cap - vec->offset)
+		return VE_OK;
+
+	return vinternal_set_size(vec, vec->len, vinternal_c_keepoffset(vec));
 }
 
 int v_reduce_strict(Vec *vec)
 {
-	if (vec->len == 0)
-	{
-		free(vec->data);
+	if (vec == NULL)
+		return VE_INVAL;
 
-		vec->data = malloc(0);
-
-		vec->first = vec->data;
-		vec->last = vec->first;
-
-		vec->cap = vec->offset = 0;
-
-		return VE_OK;
-	}
-
-	if (vec->offset == 0)
-	{
-		void *reduced = realloc(vec->data, vec->len * vec->elem_size);
-		if (reduced == NULL)
-			return VE_NOMEM;
-
-		vec->data = reduced;
-		vec->cap = vec->len;
-
-		return VE_OK;
-	}
-
-	void *reduced = malloc(vec->len * vec->elem_size);
-	if (reduced == NULL)
-		return VE_NOMEM;
-
-	vec->first = memcpy(
-		reduced,
-		vec->first,
-		vec->len * vec->elem_size);
-
-	vec->last = ((char *)vec->first) + (vec->len * vec->elem_size);
-
-	free(vec->data);
-	vec->data = reduced;
-
-	vec->cap = vec->len;
-	vec->offset = 0;
-
-	return VE_OK;
+	return vinternal_set_size(vec, vec->len, false);
 }
 
 int v_grow(Vec *vec, size_t by_size)
 {
+	if (vec == NULL)
+		return VE_INVAL;
+
 	size_t new_cap = vinternal_size_t_add(vec->cap, by_size);
 	return v_set_size(vec, new_cap);
 }
 
 int v_shrink(Vec *vec, size_t by_size)
 {
+	if (vec == NULL)
+		return VE_INVAL;
+
 	size_t new_cap = vinternal_size_t_sub(vec->cap, by_size);
 	return v_set_size(vec, new_cap);
 }
@@ -489,6 +513,9 @@ int v_shrink(Vec *vec, size_t by_size)
 
 int v_push(Vec *vec, void *elem)
 {
+	if (vec == NULL)
+		return VE_INVAL;
+
 	if (elem == NULL)
 		return VE_OK;
 
@@ -522,6 +549,9 @@ int v_push(Vec *vec, void *elem)
 
 int v_pop(Vec *vec, void *dest)
 {
+	if (vec == NULL)
+		return VE_INVAL;
+
 	if (vec->len == 0)
 		return VE_EMPTY;
 
@@ -545,6 +575,9 @@ int v_pop(Vec *vec, void *dest)
 
 int v_first(Vec *vec, void *dest)
 {
+	if (vec == NULL)
+		return VE_INVAL;
+
 	if (vec->len == 0)
 		return VE_EMPTY;
 
@@ -561,6 +594,9 @@ int v_first(Vec *vec, void *dest)
 
 int v_last(Vec *vec, void *dest)
 {
+	if (vec == NULL)
+		return VE_INVAL;
+
 	if (vec->len == 0)
 		return VE_EMPTY;
 
@@ -578,6 +614,9 @@ int v_last(Vec *vec, void *dest)
 
 int v_at(Vec *vec, void *dest, size_t index)
 {
+	if (vec == NULL)
+		return VE_INVAL;
+
 	if (vec->len == 0)
 		return VE_EMPTY;
 
@@ -602,6 +641,9 @@ int v_at(Vec *vec, void *dest, size_t index)
 
 int v_insert(Vec *vec, void *elem, size_t index)
 {
+	if (vec == NULL)
+		return VE_INVAL;
+
 	if (elem == NULL)
 		return VE_OK;
 
@@ -680,6 +722,9 @@ int v_insert(Vec *vec, void *elem, size_t index)
 
 int v_remove(Vec *vec, void *dest, size_t index) // WIP
 {
+	if (vec == NULL)
+		return VE_INVAL;
+
 	if (vec->len == 0)
 		return VE_EMPTY;
 
@@ -717,6 +762,9 @@ int v_remove(Vec *vec, void *dest, size_t index) // WIP
 
 int v_swap_insert(Vec *vec, void *elem, size_t index)
 {
+	if (vec == NULL)
+		return VE_INVAL;
+
 	if (elem == NULL)
 		return VE_OK;
 
@@ -736,6 +784,9 @@ int v_swap_insert(Vec *vec, void *elem, size_t index)
 
 int v_swap_remove(Vec *vec, void *dest, size_t index)
 {
+	if (vec == NULL)
+		return VE_INVAL;
+
 	if (vec->len == 0)
 		return VE_EMPTY;
 
@@ -766,6 +817,9 @@ int v_swap_remove(Vec *vec, void *dest, size_t index)
 
 void *v_raw(Vec *vec)
 {
+	if (vec == NULL)
+		return NULL;
+
 	if (vec->len == 0)
 		return NULL;
 
@@ -786,6 +840,9 @@ void *v_raw(Vec *vec)
 
 void *v_raw_slice(Vec *vec, size_t from, size_t to)
 {
+	if (vec == NULL)
+		return NULL;
+
 	if (vec->len == 0)
 		return NULL;
 
@@ -817,6 +874,9 @@ void *v_raw_slice(Vec *vec, size_t from, size_t to)
 
 Vec *v_slice(Vec *vec, size_t from, size_t to)
 {
+	if (vec == NULL)
+		return NULL;
+
 	if (vec->len == 0)
 		return NULL;
 
@@ -849,9 +909,12 @@ Vec *v_slice(Vec *vec, size_t from, size_t to)
 	return slice;
 }
 
-// TODO
+// rework later?
 int v_prepend(Vec *vec, void *src, size_t amount)
 {
+	if (vec == NULL)
+		return VE_INVAL;
+
 	size_t new_len = vec->len + amount;
 	size_t min_cap = new_len - vec->offset;
 
@@ -860,7 +923,8 @@ int v_prepend(Vec *vec, void *src, size_t amount)
 
 	while (min_cap > vec->cap)
 	{
-		vinternal_return_maybe(v_set_size(vec, vinternal_double_cap(vec->cap)));
+		vinternal_return_maybe(
+			v_set_size(vec, vinternal_double_cap(vec->cap)));
 
 		min_cap = new_len - vec->offset;
 	}
@@ -889,19 +953,85 @@ int v_prepend(Vec *vec, void *src, size_t amount)
 	vec->offset = 0;
 	vec->len = new_len;
 
-	vec->last = ((char*)vec->first) + (vec->len * vec->elem_size);
+	vec->last = ((char *)vec->first) + (vec->len * vec->elem_size);
 
 	return VE_OK;
 }
-/*
+// rework later?
 int v_append(Vec *vec, void *src, size_t amount)
 {
-	
+	if (vec == NULL)
+		return VE_INVAL;
+
+	if (src == NULL || amount == 0)
+		return VE_OK;
+
+	size_t new_len = vec->len + amount;
+
+	if (new_len > vinternal_real_cap(vec)
+		&& !vinternal_zero_offset_maybe(vec, new_len)
+		&& vinternal_c_noautogrow(vec))
+		return VE_NOCAP;
+
+	while (new_len > vinternal_real_cap(vec)
+		&& !vinternal_zero_offset_maybe(vec, new_len))
+	{
+		vinternal_return_maybe(
+			v_set_size(vec, vinternal_double_cap(vec->cap)));
+	}
+
+	if (vec->len == 0)
+	{
+		vec->first = ((char *)vec->data) + (vec->offset * vec->elem_size);
+		vec->last = vec->first;
+	}
+
+	vec->len = new_len;
+
+	size_t new_size = amount * vec->elem_size;
+
+	memcpy(
+		vec->last,
+		src,
+		new_size);
+
+	vec->last = ((char *)vec->last) + new_size;
+
+	return VE_OK;
 }
-*/
+
+
+int v_trim_front(Vec *vec, void *dest, size_t amount)
+{
+	if (vec == NULL)
+		return VE_INVAL;
+
+	if (vec->len < amount)
+		amount = vec->len;
+
+	size_t trim_size = amount * vec->elem_size;
+
+	if (dest != NULL)
+	{
+		memcpy(
+			dest,
+			vec->first,
+			trim_size);
+	}
+
+	vec->first = ((char *)vec->first) + trim_size;
+	vec->len -= amount;
+
+	vinternal_return_maybe(
+		vinternal_shrink_maybe(vec));
+}
+
 
 Vec *v_clone(Vec *vec)
 {
+	if (vec == NULL)
+		return NULL;
+
 	Vec *clone = malloc(sizeof(Vec));
 	if (clone == NULL)
 		return NULL;
@@ -930,25 +1060,43 @@ Vec *v_clone(Vec *vec)
 	return clone;
 }
 
-void v_zero(Vec *vec)
+int v_zero(Vec *vec)
 {
+	if (vec == NULL)
+		return VE_INVAL;
+
 	memset(vec->first, 0, (vec->len * vec->elem_size));
+
+	return VE_OK;
 }
 
-void v_softclear(Vec *vec)
+int v_softclear(Vec *vec)
 {
+	if (vec == NULL)
+		return VE_INVAL;
+
 	vec->len = 0;
+
+	return VE_OK;
 }
 
-void v_destroy(Vec *vec)
+int v_destroy(Vec *vec)
 {
+	if (vec == NULL)
+		return VE_INVAL;
+
 	free(vec->data);
 	free(vec);
+
+	return VE_OK;
 }
 
 
 VecIter *v_iter(Vec *vec)
 {
+	if (vec == NULL)
+		return NULL;
+
 	VecIter *iter = malloc(sizeof(VecIter));
 	if (iter == NULL)
 		return NULL;
@@ -983,6 +1131,9 @@ VecIter *v_iter(Vec *vec)
 
 VecIter *v_into_iter(Vec **restrict vec)
 {
+	if (vec == NULL)
+		return NULL;
+
 	VecIter *iter = malloc(sizeof(VecIter));
 
 	iter->pos = 0;
@@ -1005,8 +1156,11 @@ VecIter *v_into_iter(Vec **restrict vec)
 }
 
 
-void vi_destroy(VecIter *iter)
+int vi_destroy(VecIter *iter)
 {
+	if (iter == NULL)
+		return VE_INVAL;
+
 	if (iter->vec != NULL && iter->owner)
 	{
 		free(iter->vec->data);
@@ -1014,21 +1168,32 @@ void vi_destroy(VecIter *iter)
 	}
 
 	free(iter);
+
+	return VE_OK;
 }
 
 
 bool vi_is_owner(VecIter *iter)
 {
+	if (iter == NULL)
+		return false;
+
 	return iter->owner;
 }
 
 size_t vi_pos(VecIter *iter)
 {
+	if (iter == NULL)
+		return 0;
+
 	return iter->pos;
 }
 
 bool vi_done(VecIter *iter)
 {
+	if (iter == NULL)
+		return true;
+
 	if (iter->vec == NULL || iter->vec->len == 0)
 		return true;
 
@@ -1036,8 +1201,11 @@ bool vi_done(VecIter *iter)
 }
 
 
-int vi_next(VecIter *iter, void *dest)
+int vi_next(VecIter *iter, void *dest) // TODO -> return values?
 {
+	if (iter == NULL)
+		return VE_INVAL;
+
 	if (iter->finger == NULL)
 	{
 		return 1;
@@ -1055,14 +1223,17 @@ int vi_next(VecIter *iter, void *dest)
 		iter->pos = iter->vec->len - 1;
 		iter->finger = NULL;
 	} else {
-		iter->finger = ((char*)iter->finger) + iter->vec->elem_size;
+		iter->finger = ((char *)iter->finger) + iter->vec->elem_size;
 	}
 
-	return 0;
+	return VE_OK;
 }
 
 int vi_skip(VecIter *iter, size_t amount)
 {
+	if (iter == NULL)
+		return VE_INVAL;
+
 	iter->pos += amount;
 
 	if (iter->pos >= iter->vec->len - 1)
@@ -1078,6 +1249,9 @@ int vi_skip(VecIter *iter, size_t amount)
 
 int vi_goto(VecIter *iter, size_t index)
 {
+	if (iter == NULL)
+		return VE_INVAL;
+
 	iter->pos = index;
 
 	if (iter->pos >= iter->vec->len - 1)
@@ -1094,6 +1268,9 @@ int vi_goto(VecIter *iter, size_t index)
 
 Vec *vi_from_iter(VecIter *iter)
 {
+	if (iter == NULL)
+		return NULL;
+
 	if (iter->vec == NULL)
 		return NULL;
 
