@@ -24,12 +24,14 @@ typedef struct vinternal_VecIter VecIter;
 /**
  * The default base configuration of vectors created with v_create or v_create_with
  */
-#define VEC_DEFAULT_BASE_CFG 0
+extern const size_t VC_DEFAULT_BASE_CFG;
+// = 0
 
 /**
  * The default base element capacity of vectors created with v_create
  */
-#define VEC_DEFAULT_BASE_CAP 8
+extern const size_t VC_DEFAULT_BASE_CAP;
+// = 8
 
 
 /**
@@ -141,6 +143,11 @@ enum VecErr
 	VE_INVAL,
 
 	/**
+	 * This function needs C11 or later to work.
+	 */
+	VE_NEEDSTDC11,
+
+	/**
 	 * For internal use only.
 	 * This value will never be returned by a function as an error code.
 	 */
@@ -194,22 +201,6 @@ extern void vc_set_verbose(bool verbose);
 
 
 /**
- * Align the size of a type to the pointer size of your system.
- * 
- * @param	size	Size of the type to be aligned
- * @return			Multiple of the system pointer size
- */
-inline size_t v_align_to_ptr(size_t size)
-{
-	/*
-	 * 1. Add sizeof(void *) - 1 to original size to make sure the type will fit into its new size
-	 * 2. Zero all bits after 0b0100/0b1000 to make the result divisible by sizeof(void *)
-	 */
-	return (((size + sizeof(void *) - 1)) & ~((size_t) sizeof(void *) - 1));
-}
-
-
-/**
  * Print an appropriate error message for a vector error code.
  * 
  * @param	str		Custom message to be printed before the error message
@@ -221,17 +212,6 @@ extern void v_perror(const char *str, enum VecErr err);
 
 
 /**
- * Create a new vector with a custom base capacity.
- * 
- * @param	elem_size	Size of the elements to be stored in the vector in bytes
- * @param	cap			Desired base capacity
- * @return				Pointer to a new Vec struct, NULL on error
- *
- * @see Vec
- */
-extern Vec *v_create_with(size_t elem_size, size_t cap);
-
-/**
  * Create a new vector with elements of a specified size.
  * 
  * @param	elem_size	Size of the elements to be stored in the vector in bytes
@@ -240,6 +220,17 @@ extern Vec *v_create_with(size_t elem_size, size_t cap);
  * @see Vec
  */
 extern Vec *v_create(size_t elem_size);
+
+/**
+ * Create a new vector with a custom base capacity.
+ * 
+ * @param	elem_size	Size of the elements to be stored in the vector in bytes
+ * @param	base_cap	Desired base capacity
+ * @return				Pointer to a new Vec struct, NULL on error
+ *
+ * @see Vec
+ */
+extern Vec *v_create_with(size_t elem_size, size_t base_cap);
 
 
 /**
@@ -303,6 +294,10 @@ extern size_t v_len(Vec *vec);
  */
 extern size_t v_cap(Vec *vec);
 
+/**
+ * Returns whether the specified vector is pointer aligned.
+ */
+extern bool v_is_aligned(Vec *vec);
 
 /**
  * Tries to resize the specified vector.
@@ -327,6 +322,7 @@ extern int v_set_size(Vec *vec, size_t size);
  * @see		VecErr
  */
 extern int v_reduce(Vec *vec);
+
 /**
  * Reduces the specified vector's capacity to its
  * exact length. The vector's offset will always
@@ -338,6 +334,7 @@ extern int v_reduce(Vec *vec);
  * @see		VecErr
  */
 extern int v_reduce_strict(Vec *vec);
+
 
 /**
  * Grows the specified vector.
@@ -353,6 +350,7 @@ extern int v_grow(Vec *vec, size_t by_size);
  */
 extern int v_shrink(Vec *vec, size_t by_size);
 
+
 /**
  * Add an element to the end of a vector.
  * 
@@ -361,6 +359,7 @@ extern int v_shrink(Vec *vec, size_t by_size);
  * @return			Non-zero if an error has occured
  */
 extern int v_push(Vec *vec, void *elem);
+
 /**
  * Remove an element from the end of a vector.
  * 
@@ -372,6 +371,7 @@ extern int v_push(Vec *vec, void *elem);
  */
 extern int v_pop(Vec *vec, void *dest);
 
+
 /**
  * Get a copy of the first element of a vector.
  * 
@@ -382,6 +382,7 @@ extern int v_pop(Vec *vec, void *dest);
  * @see		VecErr
  */
 extern int v_first(Vec *vec, void *dest);
+
 /**
  * Get a copy of the last element of a vector.
  * 
@@ -392,6 +393,7 @@ extern int v_first(Vec *vec, void *dest);
  * @see		VecErr
  */
 extern int v_last(Vec *vec, void *dest);
+
 /**
  * Get a copy of the element at the specified index of a vector.
  * 
@@ -403,6 +405,7 @@ extern int v_last(Vec *vec, void *dest);
  * @see		VecErr
  */
 extern int v_at(Vec *vec, void *dest, size_t index);
+
 
 /**
  * Insert an element at the specified index, shifting
@@ -416,6 +419,7 @@ extern int v_at(Vec *vec, void *dest, size_t index);
  * @see		VecErr
  */
 extern int v_insert(Vec *vec, void *elem, size_t index);
+
 /**
  * Remove an element from the specified index, shifting
  * all elements after it by one.
@@ -429,6 +433,7 @@ extern int v_insert(Vec *vec, void *elem, size_t index);
  */
 extern int v_remove(Vec *vec, void *dest, size_t index);
 
+
 /**
  * Insert an element at the specified index by replacing the current element
  * there and appending it to the end of the vector.
@@ -441,6 +446,7 @@ extern int v_remove(Vec *vec, void *dest, size_t index);
  * @see		VecErr
  */
 extern int v_swap_insert(Vec *vec, void *elem, size_t index);
+
 /**
  * Remove an element from the specified index by replacing it with the last
  * element of the vector.
@@ -454,6 +460,7 @@ extern int v_swap_insert(Vec *vec, void *elem, size_t index);
  */
 extern int v_swap_remove(Vec *vec, void *dest, size_t index);
 
+
 /**
  * Raw data of a vector.
  *
@@ -464,6 +471,7 @@ extern int v_swap_remove(Vec *vec, void *dest, size_t index);
  * @see		V_RAWNOCOPY
  */
 extern void *v_raw(Vec *vec);
+
 /**
  * Raw slice of a vector's data.
  *
@@ -488,6 +496,7 @@ extern void *v_raw_slice(Vec *vec, size_t from, size_t to);
  */
 extern Vec *v_slice(Vec *vec, size_t from, size_t to);
 
+
 /**
  * Prepend one or multiple elements to a vector.
  *
@@ -499,6 +508,7 @@ extern Vec *v_slice(Vec *vec, size_t from, size_t to);
  * @see		VecErr
  */
 extern int v_prepend(Vec *vec, void *src, size_t amount);
+
 /**
  * Append one or multiple elements to a vector.
  *
@@ -511,6 +521,7 @@ extern int v_prepend(Vec *vec, void *src, size_t amount);
  */
 extern int v_append(Vec *vec, void *src, size_t amount);
 
+
 /**
  * Trim multiple elements from the front of a vector.
  *
@@ -522,6 +533,7 @@ extern int v_append(Vec *vec, void *src, size_t amount);
  * @see		VecErr
  */
 extern int v_trim_front(Vec *vec, void *dest, size_t amount);
+
 /**
  * Trim multiple elements from the back of a vector.
  *
@@ -533,6 +545,7 @@ extern int v_trim_front(Vec *vec, void *dest, size_t amount);
  * @see		VecErr
  */
 extern int v_trim_back(Vec *vec, void *dest, size_t amount);
+
 
 /**
  * Insert multiple elements at the specified index, shifting
@@ -547,6 +560,7 @@ extern int v_trim_back(Vec *vec, void *dest, size_t amount);
  * @see		VecErr
  */
 extern int v_insert_multiple(Vec *vec, void *src, size_t index, size_t amount);
+
 /**
  * Remove multiple elements from the specified index, shifting
  * all elements after it by amount.
@@ -560,6 +574,7 @@ extern int v_insert_multiple(Vec *vec, void *src, size_t index, size_t amount);
  * @see		VecErr
  */
 extern int v_remove_multiple(Vec *vec, void *dest, size_t index, size_t amount);
+
 
 /**
  * Split a vector into two vectors at a specified index
@@ -577,6 +592,15 @@ extern Vec *v_split(Vec *vec, size_t index);
  * @return			Cloned vector, NULL if an error has occured
  */
 extern Vec *v_clone(Vec *vec);
+
+/**
+ * Clone a vector's data to a new one with its exact length as its capacity.
+ *
+ * @param	vec		Vector to be operated on
+ * @return			Cloned vector, NULL if an error has occured
+ */
+extern Vec *v_reduced_clone(Vec *vec);
+
 /**
  * Zero all elements of a vector.
  *
@@ -586,6 +610,7 @@ extern Vec *v_clone(Vec *vec);
  * @see		VecErr
  */
 extern int v_zero(Vec *vec);
+
 /**
  * Clear a vector's elements while retaining its capacity.
  *
@@ -595,6 +620,7 @@ extern int v_zero(Vec *vec);
  * @see		VecErr
  */
 extern int v_softclear(Vec *vec);
+
 /**
  * Clear a vector's elements and set its capacity to zero.
  *
@@ -604,6 +630,7 @@ extern int v_softclear(Vec *vec);
  * @see		VecErr
  */
 extern int v_clear(Vec *vec);
+
 /**
  * Destroy a vector.
  *
@@ -614,6 +641,7 @@ extern int v_clear(Vec *vec);
  */
 extern int v_destroy(Vec *vec);
 
+
 /**
  * Create an iterator over a vector.
  *
@@ -623,6 +651,7 @@ extern int v_destroy(Vec *vec);
  * @see VecIter
  */
 extern VecIter *v_iter(Vec *vec);
+
 /**
  * Create an iterator over a vector, consuming the vector.
  *
@@ -633,6 +662,7 @@ extern VecIter *v_iter(Vec *vec);
  */
 extern VecIter *v_into_iter(Vec **restrict vec);
 
+
 /**
  * Check whether an iterator owns the vector it iterates over.
  *
@@ -640,6 +670,7 @@ extern VecIter *v_into_iter(Vec **restrict vec);
  * @return			True if the specified iterator owns its vector, false if not or on error
  */
 extern bool vi_is_owner(VecIter *iter);
+
 /**
  * Returns the current position of the specified iterator.
  * 
@@ -647,6 +678,7 @@ extern bool vi_is_owner(VecIter *iter);
  * @return			Current position of the iterator, 0 on error or if its position is 0
  */
 extern size_t vi_pos(VecIter *iter);
+
 /**
  * Check whether an iterator is done iterating over its vector.
  *
@@ -654,6 +686,7 @@ extern size_t vi_pos(VecIter *iter);
  * @return			True if the iterator is done iterating or on error, false if not
  */
 extern bool vi_done(VecIter *iter);
+
 
 /**
  * Return the element at the iterator's current position.
@@ -665,6 +698,7 @@ extern bool vi_done(VecIter *iter);
  * @see		VecErr
  */
 extern int vi_current(VecIter *iter, void *dest);
+
 /**
  * Return the element at the iterator's current position and advance it by one.
  *
@@ -686,6 +720,7 @@ extern int vi_next(VecIter *iter, void *dest);
  * @see		VecErr
  */
 extern int vi_skip(VecIter *iter, size_t amount);
+
 /**
  * Set the iterator to a specified index of its vector.
  *
@@ -696,6 +731,7 @@ extern int vi_skip(VecIter *iter, size_t amount);
  * @see		VecErr
  */
 extern int vi_goto(VecIter *iter, size_t index);
+
 /**
  * Reset an iterator to the beginning of its vector.
  *
@@ -706,6 +742,7 @@ extern int vi_goto(VecIter *iter, size_t index);
  */
 extern int vi_reset(VecIter *iter);
 
+
 /**
  * Create a vector from an iterator, consuming the iterator.
  *
@@ -713,6 +750,7 @@ extern int vi_reset(VecIter *iter);
  * @return			Pointer to new vector, NULL if an error has occured
  */
 extern Vec *vi_from_iter(VecIter *iter);
+
 /**
  * Destroy an iterator.
  *

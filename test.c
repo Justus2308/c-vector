@@ -128,6 +128,12 @@ int main(void)
 	vdebug_print_info(vec);
 	vdebug_print_raw_mem(vec);
 
+	v_add_cfg(vec, V_ALLOWOUTOFBOUNDS);
+	printf("OOB now allowed for vec\n\n");
+
+	v_remove_cfg(vec, V_ALLOWOUTOFBOUNDS);
+	printf("OOB now disallowed for vec\n\n");
+
 	void *raw = v_raw(vec);
 	printf("Raw data from v_raw:\n");
 	for (i = 0; i < vec->len * vec->elem_size; i++)
