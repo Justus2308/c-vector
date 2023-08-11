@@ -577,7 +577,8 @@ extern int v_remove_multiple(Vec *vec, void *dest, size_t index, size_t amount);
 
 
 /**
- * Split a vector into two vectors at a specified index
+ * Split a vector into two vectors at a specified index.
+ * The element at the index will be part of the returned vector.
  *
  * @param	vec		Vector to be split, will retain lower half of the split on success
  * @param	index	Index the vector will be split at

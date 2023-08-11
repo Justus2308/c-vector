@@ -276,37 +276,27 @@ Vec *vinternal_create(size_t elem_size, size_t base_cap)
 }
 
 /**
- * Clone a vector.
+ * Clone a vector. Params from and to are unchecked!
  */
 static
-Vec *vinternal_clone(Vec *vec, bool reduced)
+Vec *vinternal_clone(Vec *vec, size_t from, size_t to, bool reduced)
 {
-	Vec *clone = malloc(sizeof(Vec));
+	size_t clone_len = to - from;
+	size_t clone_cap = reduced ? clone_len : vec->cap;
+
+	Vec *clone = vinternal_create(vec->elem_size, clone_cap);
 	if (clone == NULL)
 		return NULL;
 
-	size_t clone_cap = reduced ? vec->len : vec->cap;
-
-	clone->data = malloc(clone_cap * vec->elem_size);
-	if (clone->data == NULL)
-	{
-		free(clone);
-		return NULL;
-	}
-
-	clone->elem_size = vec->elem_size;
-	clone->len = vec->len;
-	clone->cap = clone_cap;
+	clone->len = clone_len;
 	clone->offset = reduced ? 0 : vec->offset;
 
 	clone->first = memcpy(
 		((char *) clone->data) + (clone->offset * clone->elem_size),
-		reduced ? vec->first : vec->data,
-		(vec->offset + vec->len) * vec->elem_size);
+		((char *) vec->first) + (from * vec->elem_size),
+		clone_len * vec->elem_size);
 
 	clone->last = ((char *) clone->first) + (clone->len * clone->elem_size);
-
-	clone->config = vec->config;
 
 	return clone;
 }
@@ -1049,25 +1039,7 @@ Vec *v_slice(Vec *vec, size_t from, size_t to)
 	if (to >= vec->len)
 		to = vec->len - 1;
 
-	size_t slice_len = to - from;
-	size_t slice_size = slice_len * vec->elem_size;
-
-	Vec *slice = vinternal_create(
-		vec->elem_size, slice_len);
-
-	memcpy(
-		slice->data,
-		((char*)vec->first) + (from * vec->elem_size),
-		slice_size);
-
-	slice->elem_size = vec->elem_size;
-	slice->len = slice_len;
-	slice->first = slice->data;
-	slice->last = ((char*)slice->first) + (slice->len * vec->elem_size);
-
-	slice->config = vec->config;
-
-	return slice;
+	return vinternal_clone(vec, from, to, true);
 }
 
 // rework later?
@@ -1075,6 +1047,9 @@ int v_prepend(Vec *vec, void *src, size_t amount)
 {
 	if (vec == NULL)
 		return VE_INVAL;
+
+	if (src == NULL || amount == 0) // implement src == NULL as special case and prepend zeroes?
+		return VE_OK;
 
 	if (vec->offset >= amount)
 	{
@@ -1149,7 +1124,7 @@ int v_trim_front(Vec *vec, void *dest, size_t amount)
 	if (vec == NULL)
 		return VE_INVAL;
 
-	if (vec->len < amount)
+	if (amount > vec->len)
 		amount = vec->len;
 
 	size_t trim_size = amount * vec->elem_size;
@@ -1162,7 +1137,7 @@ int v_trim_front(Vec *vec, void *dest, size_t amount)
 			trim_size);
 	}
 
-	vec->first = ((char *)vec->first) + trim_size;
+	vec->first = ((char *) vec->first) + trim_size;
 	vec->len -= amount;
 
 	VMACRO_RETURN_MAYBE(
@@ -1171,13 +1146,184 @@ int v_trim_front(Vec *vec, void *dest, size_t amount)
 	return VE_OK;
 }
 
+int v_trim_back(Vec *vec, void *dest, size_t amount)
+{
+	if (vec == NULL)
+		return VE_INVAL;
+
+	if (amount > vec->len)
+		amount = vec->len;
+
+	size_t trim_size = amount * vec->elem_size;
+	vec->last = ((char *) vec->last) - trim_size;
+
+	if (dest != NULL)
+	{
+		memcpy(
+			dest,
+			vec->last,
+			trim_size);
+	}
+
+	vec->len -= amount;
+
+	VMACRO_RETURN_MAYBE(
+		vinternal_shrink_maybe(vec));
+
+	return VE_OK;
+}
+// TODO: implement insert as insert_multiple with amount=1?
+// do trim_front and trim_back make sense as separate funcs?
+// -> can save a lot of oob checks bc conditions are guaranteed
+// -> are special cases sufficiently frequent? (probably yes)
+int v_insert_multiple(Vec *vec, void *src, size_t index, size_t amount)
+{
+	if (vec == NULL)
+		return VE_INVAL;
+
+	if (index == 0)
+		return v_prepend(vec, src, amount);
+
+	if (src == NULL)
+		return VE_OK;
+
+	size_t index_plus_amount = index + amount;
+
+	if (index >= vinternal_real_cap(vec))
+	{
+		if (!vinternal_c_allowoutofbounds(vec))
+			return v_append(vec, src, amount);
+
+		VMACRO_RETURN_MAYBE(
+			vinternal_grow_maybe(vec, index_plus_amount, vinternal_c_keepoffset(vec)));
+	}
+
+	size_t insert_size = amount * vec->elem_size;
+	size_t size_til_index = index * vec->elem_size;
+
+	if (index >= vec->len)
+	{
+		if (!vinternal_c_allowoutofbounds(vec))
+			return v_append(vec, src, amount);
+
+		if (vec->len == 0)
+		{
+			vec->first = ((char *) vec->data) + (vec->offset * vec->elem_size);
+		}
+
+		memset(
+			((char *) vec->last),
+			0,
+			(index - vec->len) * vec->elem_size);
+
+		vec->last = ((char *) memcpy(
+			((char *) vec->first) + size_til_index,
+			src,
+			insert_size))
+			+ insert_size;
+
+		vec->len = index_plus_amount;
+
+		return VE_OK;
+	}
+
+	size_t new_len = vec->len + amount;
+	
+	VMACRO_RETURN_MAYBE(
+		vinternal_grow_maybe(vec, new_len, vinternal_c_keepoffset(vec)));
+
+	memmove(
+		((char *) vec->first) + (index_plus_amount * vec->elem_size),
+		((char *) vec->first) + size_til_index,
+		(vec->len - index) * vec->elem_size);
+
+	memcpy(
+		((char *) vec->first) + size_til_index,
+		src,
+		insert_size);
+
+	vec->len = new_len;
+
+	vec->last = ((char *) vec->last) + insert_size;
+
+	return VE_OK;
+}
+// TODO
+int v_remove_multiple(Vec *vec, void *dest, size_t index, size_t amount)
+{
+	if (vec == NULL)
+		return VE_INVAL;
+
+	if (vec->len == 0)
+		return VE_EMPTY;
+
+	if (index == 0)
+		return v_trim_front(vec, dest, amount);
+
+	if (index >= vec->len)
+	{
+		if (vinternal_c_allowoutofbounds(vec))
+			return VE_OUTOFBOUNDS;
+
+		return v_trim_back(vec, dest, amount);
+	}
+
+	if (amount > vec->len)
+		amount = vec->len;
+
+	size_t remove_size = amount * vec->elem_size;
+
+	if (dest != NULL)
+	{
+		memcpy(
+			dest,
+			((char *) vec->first) + (index * vec->elem_size),
+			remove_size);
+	}
+
+	memmove(
+		((char *) vec->first) + (index * vec->elem_size),
+		((char *) vec->first) + ((index + amount) * vec->elem_size),
+		(vec->len - index) * vec->elem_size);
+
+	vec->len -= amount;
+
+	vec->last = ((char *) vec->last) - remove_size;
+
+	VMACRO_RETURN_MAYBE(
+		vinternal_shrink_maybe(vec));
+
+	return VE_OK;
+}
+
+
+Vec *v_split(Vec *vec, size_t index)
+{
+	if (vec == NULL)
+		return NULL;
+
+	if (index > vec->len)
+		return vinternal_c_allowoutofbounds(vec)
+			? NULL
+			: vinternal_create(vec->elem_size, 0);
+
+	Vec *higher = vinternal_clone(vec, index, vec->len, true);
+	if (higher == NULL)
+		return NULL;
+
+	vec->len = index;
+
+	vinternal_shrink_maybe(vec); // check retval? vinternal_set_size doesn't corrupt vec on failure
+
+	return higher;
+}
 
 Vec *v_clone(Vec *vec)
 {
 	if (vec == NULL)
 		return NULL;
 
-	return vinternal_clone(vec, false);
+	return vinternal_clone(vec, 0, vec->len, false);
 }
 
 Vec *v_reduced_clone(Vec *vec)
@@ -1185,7 +1331,7 @@ Vec *v_reduced_clone(Vec *vec)
 	if (vec == NULL)
 		return NULL;
 
-	return vinternal_clone(vec, true);
+	return vinternal_clone(vec, 0, vec->len, true);
 }
 
 int v_zero(Vec *vec)
@@ -1227,7 +1373,7 @@ int v_destroy(Vec *vec)
 	return VE_OK;
 }
 
-
+// TODO: create vinternals for iterators
 VecIter *v_iter(Vec *vec)
 {
 	if (vec == NULL)
@@ -1257,7 +1403,7 @@ VecIter *v_iter(Vec *vec)
 		return iter;
 	}
 
-	iter->vec = vinternal_clone(vec, true);
+	iter->vec = vinternal_clone(vec, 0, vec->len, true);
 	if (iter->vec == NULL)
 		return NULL;
 
@@ -1424,7 +1570,7 @@ Vec *vi_from_iter(VecIter *iter)
 		return vec;
 	}
 
-	Vec *vec = vinternal_clone(iter->vec, true);
+	Vec *vec = vinternal_clone(iter->vec, 0, vec->len, true);
 	if (vec == NULL)
 		return NULL;
 
