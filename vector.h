@@ -148,6 +148,11 @@ enum VecErr
 	VE_NEEDSTDC11,
 
 	/**
+	 * Iterator has reached end of its vector.
+	 */
+	VE_ITERDONE,
+
+	/**
 	 * For internal use only.
 	 * This value will never be returned by a function as an error code.
 	 */
@@ -661,7 +666,7 @@ extern VecIter *v_iter(Vec *vec);
  *
  * @see VecIter
  */
-extern VecIter *v_into_iter(Vec **restrict vec);
+extern VecIter *v_into_iter(Vec **vec);
 
 
 /**
@@ -678,7 +683,7 @@ extern bool vi_is_owner(VecIter *iter);
  * @param	iter	Iterator to be operated on
  * @return			Current position of the iterator, 0 on error or if its position is 0
  */
-extern size_t vi_pos(VecIter *iter);
+extern size_t vi_pos(VecIter *iter); // REMOVE
 
 /**
  * Check whether an iterator is done iterating over its vector.
@@ -698,7 +703,7 @@ extern bool vi_done(VecIter *iter);
  *
  * @see		VecErr
  */
-extern int vi_current(VecIter *iter, void *dest);
+extern int vi_current(VecIter *iter, void *dest); // REMOVE?
 
 /**
  * Return the element at the iterator's current position and advance it by one.

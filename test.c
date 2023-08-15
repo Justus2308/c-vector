@@ -203,8 +203,9 @@ int main(void)
 	int tmp;
 	while (vi_next(iter, &tmp) == 0)
 	{
-		printf("%d\n", tmp);
+		printf("%d\t", tmp);
 	}
+	printf("\n");
 
 	return 0;
 }

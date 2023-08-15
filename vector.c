@@ -30,7 +30,7 @@ struct vinternal_Vec
 	void *first, *last;
 	size_t offset;
 
-	uint8_t config;
+	uint8_t config; // last bit stores ownage
 };
 
 /**
@@ -40,11 +40,7 @@ struct vinternal_Vec
 struct vinternal_VecIter
 {
 	Vec *vec;
-
-	size_t pos;
 	void *finger;
-
-	bool owner;
 };
 
 /**
@@ -64,6 +60,8 @@ static const char *const VINTERNAL_ERROR_STRINGS[] =
 
 static const size_t VINTERNAL_HALF_SIZE_MAX = SIZE_MAX >> 1;
 
+static const uint8_t VINTERNAL_OWNAGE_MASK = 1 << 7;
+
 
 static uint8_t vinternal_base_cfg = VC_DEFAULT_BASE_CFG;
 
@@ -77,9 +75,9 @@ static bool vinternal_verbose = false;
 
 
 /**
- * Return from caller if the retval of func is non-zero.
+ * Return int from caller if the retval of func is non-zero.
  */
-#define VMACRO_RETURN_MAYBE(func)											\
+#define VMACRO_RETURN_MAYBE(func)										\
 do {																		\
 	const int VTMP_RETVAL__ = func;											\
 	if (VTMP_RETVAL__)														\
@@ -124,6 +122,12 @@ static inline
 bool vinternal_c_keepoffset(Vec *vec)
 {
 	return (vec->config & V_KEEPOFFSET);
+}
+
+static inline
+bool vinternal_owned(Vec *vec)
+{
+	return (vec->config & VINTERNAL_OWNAGE_MASK);
 }
 
 
@@ -511,7 +515,7 @@ void vinternal_verr(char *tag, char *msg)
 
 void vc_set_base_cfg(enum VecCfg config)
 {
-	vinternal_base_cfg = config;
+	vinternal_base_cfg = config & ~VINTERNAL_OWNAGE_MASK;
 }
 
 void vc_set_base_cap(size_t base_cap)
@@ -570,7 +574,7 @@ int v_set_cfg(Vec *vec, enum VecCfg config)
 	if (vec == NULL)
 		return VE_INVAL;
 
-	vec->config = config;
+	vec->config = (config & ~VINTERNAL_OWNAGE_MASK);
 
 	return VE_OK;
 }
@@ -580,7 +584,7 @@ int v_add_cfg(Vec *vec, enum VecCfg config)
 	if (vec == NULL)
 		return VE_INVAL;
 
-	vec->config |= config;
+	vec->config |= (config & ~VINTERNAL_OWNAGE_MASK);
 
 	return VE_OK;
 }
@@ -590,7 +594,7 @@ int v_remove_cfg(Vec *vec, enum VecCfg config)
 	if (vec == NULL)
 		return VE_INVAL;
 
-	vec->config &= ~config;
+	vec->config &= ~(config & ~VINTERNAL_OWNAGE_MASK);
 
 	return VE_OK;
 }
@@ -1383,22 +1387,13 @@ VecIter *v_iter(Vec *vec)
 	if (iter == NULL)
 		return NULL;
 
-	iter->pos = 0;
-
-	if (vec->len == 0)
-	{
-		iter->vec = NULL;
-		iter->finger = NULL;
-		iter->owner = false;
-
-		return iter;
-	}
-
 	if (vinternal_c_iternocopy(vec))
 	{
+		if (vinternal_owned(vec))
+			return NULL;
+
 		iter->vec = vec;
 		iter->finger = vec->first;
-		iter->owner = true;
 
 		return iter;
 	}
@@ -1407,25 +1402,25 @@ VecIter *v_iter(Vec *vec)
 	if (iter->vec == NULL)
 		return NULL;
 
-	iter->owner = false;
+	iter->finger = iter->vec->first;
+	iter->vec->config |= VINTERNAL_OWNAGE_MASK;
 
 	return iter;
 }
 
-VecIter *v_into_iter(Vec **restrict vec)
+VecIter *v_into_iter(Vec **vec)
 {
 	if (vec == NULL)
 		return NULL;
 
-	VecIter *iter = malloc(sizeof(VecIter));
+	if (vinternal_owned(*vec))
+		return NULL;
 
-	iter->pos = 0;
+	VecIter *iter = malloc(sizeof(VecIter));
 
 	if ((*vec)->len == 0)
 	{
-		iter->vec = NULL;
-		iter->finger = NULL;
-		iter->owner = false;
+		iter->vec = iter->finger = NULL;
 
 		return iter;
 	}
@@ -1433,7 +1428,7 @@ VecIter *v_into_iter(Vec **restrict vec)
 	iter->vec = *vec;
 	*vec = NULL;
 	iter->finger = iter->vec->first;
-	iter->owner = true;
+	iter->vec->config |= VINTERNAL_OWNAGE_MASK;
 
 	return iter;
 }
@@ -1444,7 +1439,7 @@ int vi_destroy(VecIter *iter)
 	if (iter == NULL)
 		return VE_INVAL;
 
-	if (iter->vec != NULL && iter->owner)
+	if (iter->vec != NULL && vinternal_owned(iter->vec))
 	{
 		free(iter->vec->data);
 		free(iter->vec);
@@ -1458,56 +1453,38 @@ int vi_destroy(VecIter *iter)
 
 bool vi_is_owner(VecIter *iter)
 {
-	if (iter == NULL)
+	if (iter == NULL || iter->vec == NULL)
 		return false;
 
-	return iter->owner;
-}
-
-size_t vi_pos(VecIter *iter)
-{
-	if (iter == NULL)
-		return 0;
-
-	return iter->pos;
+	return vinternal_owned(iter->vec);
 }
 
 bool vi_done(VecIter *iter)
 {
-	if (iter == NULL)
+	if (iter == NULL || iter->vec == NULL)
 		return true;
 
-	if (iter->vec == NULL || iter->vec->len == 0)
-		return true;
-
-	return (iter->pos == iter->vec->len - 1);
+	return (iter->finger == iter->vec->last);
 }
 
 
-int vi_next(VecIter *iter, void *dest) // TODO -> return values?
+int vi_next(VecIter *iter, void *dest)
 {
 	if (iter == NULL)
 		return VE_INVAL;
 
-	if (iter->finger == NULL)
+	if (iter->vec == NULL || iter->finger == iter->vec->last)
+		return VE_ITERDONE;
+
+	if (dest != NULL)
 	{
-		return 1;
+		memcpy(
+			dest,
+			iter->finger,
+			iter->vec->elem_size);
 	}
 
-	memcpy(
-		dest,
-		iter->finger,
-		iter->vec->elem_size);
-
-	iter->pos++;
-
-	if (iter->pos >= iter->vec->len - 1)
-	{
-		iter->pos = iter->vec->len - 1;
-		iter->finger = NULL;
-	} else {
-		iter->finger = ((char *)iter->finger) + iter->vec->elem_size;
-	}
+	iter->finger = ((char *) iter->finger) + iter->vec->elem_size;
 
 	return VE_OK;
 }
@@ -1517,17 +1494,13 @@ int vi_skip(VecIter *iter, size_t amount)
 	if (iter == NULL)
 		return VE_INVAL;
 
-	iter->pos += amount;
+	if (iter->vec == NULL)
+		return VE_OK;
+	
+	iter->finger = ((char *) iter->finger) + (amount * iter->vec->elem_size);
 
-	if (iter->pos >= iter->vec->len - 1)
-	{
-		iter->pos = iter->vec->len - 1;
-		iter->finger = NULL;
-	}
-	else
-	{
-		iter->finger = ((char*)iter->finger) + (iter->vec->elem_size * iter->pos);
-	}
+	if (iter->finger > iter->vec->last)
+		iter->finger = iter->vec->last;
 
 	return VE_OK;
 }
@@ -1537,17 +1510,29 @@ int vi_goto(VecIter *iter, size_t index)
 	if (iter == NULL)
 		return VE_INVAL;
 
-	iter->pos = index;
+	if (iter->vec == NULL)
+		return VE_OK;
 
-	if (iter->pos >= iter->vec->len - 1)
+	if (index >= iter->vec->len)
 	{
-		iter->pos = iter->vec->len - 1;
-		iter->finger = NULL;
+		iter->finger = iter->vec->last;
+		return VE_OK;
 	}
-	else
-	{
-		iter->finger = ((char*)iter->vec->first) + (iter->vec->elem_size * iter->pos);
-	}
+
+	iter->finger = ((char *) iter->vec->first) + (index * iter->vec->elem_size);
+
+	return VE_OK;
+}
+
+int vi_reset(VecIter *iter)
+{
+	if (iter == NULL)
+		return VE_INVAL;
+
+	if (iter->vec == NULL)
+		return VE_OK;
+
+	iter->finger = iter->vec->first;
 
 	return VE_OK;
 }
@@ -1555,13 +1540,10 @@ int vi_goto(VecIter *iter, size_t index)
 
 Vec *vi_from_iter(VecIter *iter)
 {
-	if (iter == NULL)
+	if (iter == NULL || iter->vec == NULL)
 		return NULL;
 
-	if (iter->vec == NULL)
-		return NULL;
-
-	if (iter->owner)
+	if (vinternal_owned(iter->vec))
 	{
 		Vec *vec = iter->vec;
 
@@ -1570,7 +1552,7 @@ Vec *vi_from_iter(VecIter *iter)
 		return vec;
 	}
 
-	Vec *vec = vinternal_clone(iter->vec, 0, vec->len, true);
+	Vec *vec = vinternal_clone(iter->vec, 0, iter->vec->len, false);
 	if (vec == NULL)
 		return NULL;
 
