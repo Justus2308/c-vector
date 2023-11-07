@@ -143,11 +143,6 @@ enum VecErr
 	VE_INVAL,
 
 	/**
-	 * This function needs C11 or later to work.
-	 */
-	VE_NEEDSTDC11,
-
-	/**
 	 * Iterator has reached end of its vector.
 	 */
 	VE_ITERDONE,
@@ -158,6 +153,15 @@ enum VecErr
 	 */
 	VINTERNAL_LAST,
 };
+
+
+/**
+ * Set this to a non-zero value to compile with
+ * log messages from vector operations enabled.
+ * You can do this directly in your code or pass
+ * '-DVEC_VERBOSE_MODE=1' to your preprocessor.
+ */
+#define VEC_VERBOSE_MODE 0
 
 
 /**
@@ -196,13 +200,6 @@ extern void vc_set_output_stream(FILE *stream);
  * @see		v_perror
  */
 extern void vc_set_error_stream(FILE *stream);
-
-/**
- * Log additional information to stdout/stderr or to specified streams.
- * 
- * @param	verbose		Desired verbose mode setting
- */
-extern void vc_set_verbose(bool verbose);
 
 
 /**
@@ -287,7 +284,8 @@ extern size_t v_elem_size(Vec *vec);
  * Returns the current length of the specified vector.
  * 
  * @param	vec		Vector to be operated on
- * @return			Length of the specified vector, 0 on error or if length is 0
+ * @return			Length of the specified vector, 0 on
+ * 					error or if length is 0
  */
 extern size_t v_len(Vec *vec);
 
@@ -295,7 +293,8 @@ extern size_t v_len(Vec *vec);
  * Returns the current capacity of the specified vector.
  * 
  * @param	vec		Vector to be operated on
- * @return			Capacity of the specified vector, 0 on error or if capacity is 0
+ * @return			Capacity of the specified vector, 0 on
+ * 					error or if capacity is 0
  */
 extern size_t v_cap(Vec *vec);
 
@@ -343,7 +342,12 @@ extern int v_reduce_strict(Vec *vec);
 
 /**
  * Grows the specified vector.
- * If an error occurs, a non-zero value is returned.
+ * 
+ * @param	vec		Vector to be operated on
+ * @param	by_size	Amount the vector should be grown by
+ * @return			Non-zero if an error has occured
+ *
+ * @see		VecErr
  */
 extern int v_grow(Vec *vec, size_t by_size);
 
@@ -351,7 +355,12 @@ extern int v_grow(Vec *vec, size_t by_size);
  * Tries to shrink the specified vector.
  * If the vector is longer than the specified size
  * its capacity gets trimmed to its exact length.
- * If an error occurs, a non-zero value is returned.
+ * 
+ * @param	vec		Vector to be operated on
+ * @param	by_size	Amount the vector should be shrunk by
+ * @return			Non-zero if an error has occured
+ *
+ * @see		VecErr
  */
 extern int v_shrink(Vec *vec, size_t by_size);
 
@@ -362,6 +371,8 @@ extern int v_shrink(Vec *vec, size_t by_size);
  * @param	vec		Vector to be operated on
  * @param	elem	Pointer to the element to be pushed
  * @return			Non-zero if an error has occured
+ *
+ * @see		VecErr
  */
 extern int v_push(Vec *vec, void *elem);
 
@@ -483,8 +494,8 @@ extern void *v_raw(Vec *vec);
  * @param	vec		Vector to be operated on
  * @param	from	Low bound index of the slice
  * @param	to		High bound index of the slice
- * @return			Pointer to the slice, NULL if the
- *  				slice is empty or an error has occured
+ * @return			Pointer to the slice, NULL if the slice
+ *  				is empty or an error has occured
  *
  * @see		V_RAWNOCOPY
  */
@@ -496,8 +507,8 @@ extern void *v_raw_slice(Vec *vec, size_t from, size_t to);
  * @param	vec		Vector to be operated on
  * @param	from	Low bound index of the slice
  * @param	to		High bound index of the slice
- * @return			Pointer to the slice vector, NULL if
- * 					an error has occured
+ * @return			Pointer to the slice vector, NULL
+ * 					if an error has occured
  */
 extern Vec *v_slice(Vec *vec, size_t from, size_t to);
 
@@ -673,44 +684,28 @@ extern VecIter *v_into_iter(Vec **vec);
  * Check whether an iterator owns the vector it iterates over.
  *
  * @param	iter	Iterator to be operated on
- * @return			True if the specified iterator owns its vector, false if not or on error
+ * @return			True if the specified iterator owns
+ * 					its vector, false if not or on error
  */
 extern bool vi_is_owner(VecIter *iter);
-
-/**
- * Returns the current position of the specified iterator.
- * 
- * @param	iter	Iterator to be operated on
- * @return			Current position of the iterator, 0 on error or if its position is 0
- */
-extern size_t vi_pos(VecIter *iter); // REMOVE
 
 /**
  * Check whether an iterator is done iterating over its vector.
  *
  * @param	iter	Iterator to be operated on
- * @return			True if the iterator is done iterating or on error, false if not
+ * @return			True if the iterator is done iterating
+ * 					or on error, false if not
  */
 extern bool vi_done(VecIter *iter);
 
-
-/**
- * Return the element at the iterator's current position.
- *
- * @param	iter	Iterator to be operated on
- * @param	dest	Pointer the current element will be copied to
- * @return			Non-zero if an error has occured
- *
- * @see		VecErr
- */
-extern int vi_current(VecIter *iter, void *dest); // REMOVE?
 
 /**
  * Return the element at the iterator's current position and advance it by one.
  *
  * @param	iter	Iterator to be operated on
  * @param	dest	Pointer the current element will be copied to
- * @return			Non-zero if an error has occured
+ * @return			VE_ITERDONE if the iterator is done, other
+ * 					non-zero value if an error has occured
  *
  * @see		VecErr
  */

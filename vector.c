@@ -1,4 +1,3 @@
-#include <limits.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -30,7 +29,7 @@ struct vinternal_Vec
 	void *first, *last;
 	size_t offset;
 
-	uint8_t config; // last bit stores ownage
+	uint8_t config; // last bit stores ownage - move to bool? wouldn't impact struct size
 };
 
 /**
@@ -55,10 +54,12 @@ static const char *const VINTERNAL_ERROR_STRINGS[] =
 	[VE_TOOLONG]		= "Vector doesn't fit into the requested capacity.",
 	[VE_NOCAP]			= "Vector doesn't have enough capacity left.",
 	[VE_INVAL]			= "Vector pointer points to invalid address.",
-	[VE_NEEDSTDC11]		= "This function needs C11 or later to work.",
+	[VE_ITERDONE]		= "The iterator is done iterating.",
+
+	[VINTERNAL_LAST]	= "An unknown error has occured.",
 };
 
-static const size_t VINTERNAL_HALF_SIZE_MAX = SIZE_MAX >> 1;
+static const size_t VINTERNAL_HALF_SIZE_MAX = (~((size_t) 0)) >> 1; // use SIZE_MAX from limits.h?
 
 static const uint8_t VINTERNAL_OWNAGE_MASK = 1 << 7;
 
@@ -71,18 +72,25 @@ static size_t vinternal_base_cap = VC_DEFAULT_BASE_CAP;
 static FILE *vinternal_out_stream = NULL;
 static FILE *vinternal_err_stream = NULL;
 
-static bool vinternal_verbose = false;
-
 
 /**
  * Return int from caller if the retval of func is non-zero.
  */
-#define VMACRO_RETURN_MAYBE(func)										\
+#define VMACRO_RETURN_MAYBE(func)											\
 do {																		\
 	const int VTMP_RETVAL__ = func;											\
 	if (VTMP_RETVAL__)														\
 		return VTMP_RETVAL__;												\
 } while (false)
+
+/**
+ * Only include func in verbose mode.
+ */
+#if (VEC_VERBOSE_MODE == 0)
+#define VMACRO_VERBOSE_MODE(func)
+#else
+#define VMACRO_VERBOSE_MODE(func) func
+#endif
 
 
 /**
@@ -172,24 +180,6 @@ size_t vinternal_size_t_sub(size_t x, size_t y)
 		: x - y;
 }
 
-static inline // DEPRECATED
-bool vinternal_is_power_of_two(size_t n)
-{
-	return n != 0 && (n & (n - 1)) == 0;
-}
-
-/**
- * Align size to be a multiple of alignment.
- */
-static inline // DEPRECATED
-size_t vinternal_align(size_t size, size_t alignment)
-{
-	/*
-	 * 1. Add alignment - 1 to original size to make sure the type will fit into its new size
-	 * 2. Zero all bits after the high bit of alignment to make the result divisible by alignment
-	 */
-	return (((size + alignment - 1)) & ~(alignment - 1));
-}
 
 /**
  * Returns real capacity of vector depending on offset and config.
@@ -202,45 +192,7 @@ size_t vinternal_real_cap(Vec *vec)
 		: vec->cap;
 }
 
-/**
- * Returns real element size of vector without alignment padding.
- */
-/*static inline // DEPRECATED
-size_t vinternal_real_elem_size(Vec *vec)
-{
-	return vec->aligned
-		? vec->elem_size - vec->alignment_padding_size
-		: vec->elem_size;
-}*/
-/*
-static inline // DEPRECATED
-void *vinternal_aligned_to_buffer_memcpy(void *restrict dest, const void *restrict src, size_t n, size_t elem_size, size_t aligned_size)
-{
-	for (size_t i = 0, j = 0; i < n; i += aligned_size, j += elem_size)
-	{
-		memcpy(
-			((char *) dest) + j,
-			((char *) src) + i,
-			elem_size);
-	}
 
-	return dest;
-}
-
-static inline // DEPRECATED
-void *vinternal_buffer_to_aligned_memcpy(void *restrict dest, const void *restrict src, size_t n, size_t elem_size, size_t aligned_size)
-{
-	for (size_t i = 0, j = 0; i < n; i += aligned_size, j += elem_size)
-	{
-		memcpy(
-			((char *) dest) + i,
-			((char *) src) + j,
-			elem_size);
-	}
-
-	return dest;
-}
-*/
 /**
  * Create a new vector.
  */
@@ -310,7 +262,7 @@ Vec *vinternal_clone(Vec *vec, size_t from, size_t to, bool reduced)
  * enough to reach min_cap and config allows it.
  * Returns true if offset has been zeroed.
  */
-static inline
+static inline // now included in vinternal_set_size
 bool vinternal_zero_offset_maybe(Vec *vec, size_t min_cap)
 {
 	if (vec->cap < min_cap || vec->offset == 0)
@@ -449,6 +401,7 @@ int vinternal_shrink_maybe(Vec *vec) // TODO: account for offset in loop?
 /**
  * General logging function with timestamp.
  */
+VMACRO_VERBOSE_MODE(
 static
 void vinternal_log_to_stream(FILE *stream, char *tag, char *msg)
 {
@@ -464,10 +417,12 @@ void vinternal_log_to_stream(FILE *stream, char *tag, char *msg)
 		current_time->tm_sec,
 
 		tag, msg);
-}
+})
 /**
  * Log to vinternal_out_stream.
+ * Only logs in verbose mode.
  */
+VMACRO_VERBOSE_MODE(
 static inline
 void vinternal_log(char *tag, char *msg)
 {
@@ -476,10 +431,12 @@ void vinternal_log(char *tag, char *msg)
 		? vinternal_out_stream
 		: stdout,
 		tag, msg);
-}
+})
 /**
  * Log to vinternal_err_stream.
+ * Only logs in verbose mode.
  */
+VMACRO_VERBOSE_MODE(
 static inline
 void vinternal_err(char *tag, char *msg)
 {
@@ -488,27 +445,7 @@ void vinternal_err(char *tag, char *msg)
 		? vinternal_err_stream
 		: stderr,
 		tag, msg);
-}
-/**
- * Log to vinternal_out_stream.
- * Only logs in verbose mode.
- */
-static inline
-void vinternal_vlog(char *tag, char *msg)
-{
-	if (vinternal_verbose)
-		vinternal_log(tag, msg);
-}
-/**
- * Log to vinternal_err_stream.
- * Only logs in verbose mode.
- */
-static inline
-void vinternal_verr(char *tag, char *msg)
-{
-	if (vinternal_verbose)
-		vinternal_err(tag, msg);
-}
+})
 
 
 // Implementations functions exposed to user ; doc in vector.h
@@ -533,11 +470,6 @@ void vc_set_error_stream(FILE *stream)
 	vinternal_err_stream = stream;
 }
 
-void vc_set_verbose(bool verbose)
-{
-	vinternal_verbose = verbose;
-}
-
 
 void v_perror(const char *str, enum VecErr err)
 {
@@ -549,7 +481,7 @@ void v_perror(const char *str, enum VecErr err)
 		colon = ": ";
 
 	if (err < 0 || err >= VINTERNAL_LAST)
-		err = VE_OK;
+		err = VINTERNAL_LAST;
 
 	fprintf(
 		vinternal_err_stream ? vinternal_err_stream : stderr,
@@ -805,7 +737,7 @@ int v_at(Vec *vec, void *dest, size_t index)
 	return VE_OK;
 }
 
-int v_insert(Vec *vec, void *elem, size_t index) // WIP
+int v_insert(Vec *vec, void *elem, size_t index)
 {
 	if (vec == NULL)
 		return VE_INVAL;
@@ -874,7 +806,7 @@ int v_insert(Vec *vec, void *elem, size_t index) // WIP
 	return VE_OK;
 }
 
-int v_remove(Vec *vec, void *dest, size_t index) // WIP
+int v_remove(Vec *vec, void *dest, size_t index)
 {
 	if (vec == NULL)
 		return VE_INVAL;
@@ -1563,3 +1495,4 @@ Vec *vi_from_iter(VecIter *iter)
 
 
 #undef VMACRO_RETURN_MAYBE
+#undef VMACRO_VERBOSE_MODE

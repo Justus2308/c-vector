@@ -203,9 +203,16 @@ int main(void)
 	int tmp;
 	while (vi_next(iter, &tmp) == 0)
 	{
-		printf("%d\t", tmp);
+		printf("%x\t", tmp);
 	}
 	printf("\n");
+
+	bool done = vi_done(iter);
+	printf("Iterator done: %d\n", done);
+
+	vi_reset(iter);
+	int next = vi_next(iter, &next);
+	printf("%x\n", next);
 
 	return 0;
 }
